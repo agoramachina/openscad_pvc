@@ -46,7 +46,7 @@ end_F = "auto"; // [auto, spigot, socket, ispigot, mipt, fipt]
 // Threads for mipt/fipt ends. default = mates only with this library's parts; npt = real tapered pipe threads that fit store-bought fittings, sizes up to 2in (larger sizes use default)
 thread_style = "default"; // [default, npt]
 
-// Wall thickness around socket ends, to reinforce prints; 0 or less = library default (a third of the pipe wall, about 1mm for 3/4in). The socket still fits the pipe at any thickness (mm)
+// Wall around each end's fit surface, to reinforce prints: outside a socket's bore or female threads, under male threads (smaller bore). Only adds to threaded ends; 0 = library default (mm)
 socket_wall = 0; // [0:0.1:10]
 
 // Length of every end, so sockets go deeper; 0 = library default (10mm, or the spec table's thread length with use_spec_threads). Also lengthens spigot and threaded ends (mm)

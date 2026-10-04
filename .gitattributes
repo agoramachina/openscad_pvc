@@ -1,0 +1,2 @@
+# OpenSCAD's Customizer doesn't recognize slider/dropdown annotations on CRLF lines
+openscad_pvc_customizer.scad text eol=lf

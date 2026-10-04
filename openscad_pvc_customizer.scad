@@ -21,24 +21,24 @@ schedule = 40; // [40, 80, 120]
 dn = "DN20"; // [DN8:1/8in, DN12:1/4in, DN10:3/8in, DN15:1/2in, DN20:3/4in, DN25:1in, DN32:1-1/4in, DN40:1-1/2in, DN50:2in, DN65:2-1/2in, DN80:3in, DN90:3-1/2in, DN100:4in, DN125:5in, DN150:6in, DN200:8in, DN250:10in, DN300:12in, DN350:14in, DN400:16in, DN450:18in, DN500:20in, DN600:24in]
 
 /* [End Types] */
-// "auto" uses the part's own default (sockets for fittings, spigots for pipe).
+// "Auto" uses the part's own default (sockets for fittings, spigots for pipe). For a plain, unadorned end, pick "Spigot".
 // Parts only use as many ends as they have: A-B for 2-ended parts, A-C for tee/wye/corner, A-D for cross/side-outlet tee, A-F for six-way. Nipples ignore these.
 // Caps allow only socket/fipt; plugs only spigot/ispigot/mipt; bushings need A = socket/fipt (small side), B = spigot/mipt (large side).
 
 // Which end is where varies by part - check the preview after changing one.
 
 // End A (main run / the only end for caps and plugs)
-end_A = "auto"; // [auto, socket, spigot, ispigot, mipt, fipt]
+end_A = "auto"; // [auto:Auto - usual end for the part, spigot:Spigot - plain pipe end, socket:Socket - a pipe slides in, ispigot:Inner spigot - fits inside a pipe, mipt:Male thread - MIPT, fipt:Female thread - FIPT]
 // End B (main run)
-end_B = "auto"; // [auto, socket, spigot, ispigot, mipt, fipt]
+end_B = "auto"; // [auto:Auto - usual end for the part, spigot:Spigot - plain pipe end, socket:Socket - a pipe slides in, ispigot:Inner spigot - fits inside a pipe, mipt:Male thread - MIPT, fipt:Female thread - FIPT]
 // End C (first branch)
-end_C = "auto"; // [auto, socket, spigot, ispigot, mipt, fipt]
+end_C = "auto"; // [auto:Auto - usual end for the part, spigot:Spigot - plain pipe end, socket:Socket - a pipe slides in, ispigot:Inner spigot - fits inside a pipe, mipt:Male thread - MIPT, fipt:Female thread - FIPT]
 // End D
-end_D = "auto"; // [auto, socket, spigot, ispigot, mipt, fipt]
+end_D = "auto"; // [auto:Auto - usual end for the part, spigot:Spigot - plain pipe end, socket:Socket - a pipe slides in, ispigot:Inner spigot - fits inside a pipe, mipt:Male thread - MIPT, fipt:Female thread - FIPT]
 // End E
-end_E = "auto"; // [auto, socket, spigot, ispigot, mipt, fipt]
+end_E = "auto"; // [auto:Auto - usual end for the part, spigot:Spigot - plain pipe end, socket:Socket - a pipe slides in, ispigot:Inner spigot - fits inside a pipe, mipt:Male thread - MIPT, fipt:Female thread - FIPT]
 // End F
-end_F = "auto"; // [auto, socket, spigot, ispigot, mipt, fipt]
+end_F = "auto"; // [auto:Auto - usual end for the part, spigot:Spigot - plain pipe end, socket:Socket - a pipe slides in, ispigot:Inner spigot - fits inside a pipe, mipt:Male thread - MIPT, fipt:Female thread - FIPT]
 
 /* [Pipe Options] */
 

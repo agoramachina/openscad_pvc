@@ -406,6 +406,39 @@ module pvc_elbow(pvc, angle, ends=[], bend_radius=undef, extend=0,
 
 
 
+// Function: pvc_elbow_max_bend_radius()
+// Synopsis: Largest bend_radius that pvc_elbow() can fit for a given angle and arm length
+// Usage:
+//   r = pvc_elbow_max_bend_radius(pvc, angle, <extend=0>);
+//
+// Description:
+//   Given a PVC object `pvc`, an elbow `angle`, and the elbow's `extend` length, return the largest
+//   `bend_radius` that `pvc_elbow()` can fit, in `mm` (to within 0.001mm). A larger radius would leave
+//   less straight length than each end needs; `pvc_elbow()` asserts in that case.
+//   The limit grows with `extend`, since longer ends leave more room for the bend.
+//
+// Arguments:
+//   pvc = An instantiated PVC specification
+//   angle = The angle in degrees of the elbow, between `0` and `180`
+//   ---
+//   extend = The `extend` value the elbow will use, in `mm`. Default: `0`
+//
+// Continues:
+//   It is an error to call `pvc_elbow_max_bend_radius()` with an angle of `180` or more: `bend_radius`
+//   can't be changed for those, so there is no limit to compute.
+//
+// Example:
+//   pvc = pvc_spec_lookup(40, dn="DN20");
+//   r = pvc_elbow_max_bend_radius(pvc, 90);   // ~14.35
+//   pvc_elbow(pvc, 90, bend_radius=r);
+//
+function pvc_elbow_max_bend_radius(pvc, angle, extend=0) =
+    assert(angle > 0 && angle < 180, "pvc_elbow_max_bend_radius(): angle must be between 0 and 180")
+    // pvc_elbow() keeps (straight length - thread length) > 0, where straight length shrinks by
+    // (bend_radius - od/2) * tan(angle/2) as the radius grows past the default
+    pvc_od(pvc)/2 + (1 + extend) / tan(angle/2) - 0.001;
+
+
 // Module: pvc_wye()
 // Synopsis: Create a PVC wye model
 // Usage:

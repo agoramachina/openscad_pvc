@@ -55,6 +55,9 @@ end_length = 0; // [0:0.5:100]
 // Extra socket depth, growing inward so the part keeps its size; limited by the arm's straight section, so add arm extension for more room; 0 = none (mm)
 socket_depth = 0; // [0:0.5:100]
 
+// Extra wall thickness for printing, added wherever it won't block a fit: bodies, arms, spigots and male threads thicken inward (smaller bore); sockets and female threads thicken outward (mm)
+extra_thickness = 0; // [0:0.1:5]
+
 /* [Pipe Options] */
 
 // Total pipe length (mm)
@@ -103,6 +106,7 @@ render_fn = 96; // [24:8:240]
 $fn = $preview ? render_fn / 4 : render_fn;
 $pvc_thread_style = thread_style == "npt" ? "npt" : undef;
 $pvc_fit_clearance = fit_clearance;
+$pvc_extra_thickness = extra_thickness;
 $pvc_socket_wall = socket_wall > 0 ? socket_wall : undef;
 $pvc_socket_depth = socket_depth > 0 ? socket_depth : undef;
 

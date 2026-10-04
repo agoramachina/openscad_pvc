@@ -1054,7 +1054,7 @@ module pvc_cap(pvc, ends=[], extend=0,
     assert(in_list(ends_[0], ["fipt", "socket"]), 
         "pvc_cap(): Only 'fipt' and 'socket' are allowable end types for PVC caps");
 
-    od = (ends_[0] == "socket") ? pvc_od(pvc) + _pvc_socket_wall(pvc) * 2 : pvc_od(pvc); 
+    od = (ends_[0] == "socket") ? _pvc_socket_outer_d(pvc) : pvc_od(pvc); 
     tl = pvc_tl(pvc);
     pipe_addl = 1 + extend;
     wall = pvc_wall(pvc);
@@ -1533,6 +1533,18 @@ module pvc_union(pvc,
 //   unique schedules.
 ///   **NOTE:** this dynamic assignment is below in this LibFile, *after* the declaration of _PVC_specs_raw.
 
+// Constant: $pvc_fit_clearance
+// Description:
+//   Extra bore diameter for `socket` endpoints, in `mm`, for 3D-printed parts: socket bores otherwise
+//   match the pipe's outer diameter exactly, and printed holes come out slightly undersized, so a real
+//   pipe won't fit. When set, socket bores are the pipe's OD plus this clearance, corrected so the
+//   polygon's flats clear the pipe, and socket walls are measured outward from that bore. Unset (the
+//   default), bores are exactly the pipe's OD. Around 0.3-0.5mm suits most FDM printers; print a test
+//   piece to tune it.
+// Example:
+//   $pvc_fit_clearance = 0.4;
+//   pvc_coupling(pvc_spec_lookup(40, dn="DN20"));
+
 // Constant: $pvc_socket_wall
 // Description:
 //   Wall thickness of `socket` endpoints, in `mm`. Unset (the default), sockets use a third of the
@@ -1683,9 +1695,9 @@ module pvc_part_component(pvc, end="socket", length=undef, socket_overlap=3, soc
                 ? length
                 : assert(length >= 0, "pvc_part_component(): specified 'length' can't be negative");
 
-    max_od = max([ od, (end == "socket") ? sum([ od, _pvc_socket_wall(pvc) * 2 ]) : pvc_od(pvc) ]);
+    max_od = max([ od, (end == "socket") ? _pvc_socket_outer_d(pvc) : pvc_od(pvc) ]);
     od2 = (end == "socket") 
-        ? pvc_od(pvc) + _pvc_socket_wall(pvc) * 2
+        ? _pvc_socket_outer_d(pvc)
         : (in_list(end, ["mipt"]))
             ? od - (od - id) / 2
             : od;
@@ -1775,7 +1787,7 @@ module pvc_endpoint_negative(pvc, type="spigot", length=undef) {
         assert(in_list(type, PVC_ENDTYPES), str("pvc_endpoint_negative(): specified type ", type, " not known"));
 
         od = (type == "socket" || type == "fipt") ? pvc_socket_od(pvc) : pvc_od(pvc);
-        id = (type == "socket" || type == "fipt") ? pvc_socket_id(pvc) : pvc_id(pvc);
+        id = (type == "socket") ? _pvc_socket_bore_d(pvc) : (type == "fipt") ? pvc_socket_id(pvc) : pvc_id(pvc);
         l = (_defined(length) && length > 0) ? length : pvc_tl(pvc);
         a_diam = (type == "socket") ? od : id;
 
@@ -1832,7 +1844,7 @@ module pvc_endpoint(pvc, type="spigot", length=undef,
         od = pvc_od(pvc);
         id = pvc_id(pvc);
         wall = pvc_wall(pvc);
-        attachable_od = (type == "socket") ? sum([od, _pvc_socket_wall(pvc) * 2]) : od;
+        attachable_od = (type == "socket") ? _pvc_socket_outer_d(pvc) : od;
 
         overlap = (type == "socket") ? 3 : 0;
         l = sum([ 
@@ -1861,10 +1873,11 @@ module pvc_endpoint(pvc, type="spigot", length=undef,
                 }
 
             } else if (type == "socket") {
-                // the bore reaches 0.01mm inside the pipe's OD so the socket overlaps the pipe section it's
-                // attached to, rather than sharing a surface with it (which leaves non-manifold edges);
-                // the endpoint's negative still cuts the full OD-sized bore where the pipe goes in
-                tube(id=od - 0.02, od=od + _pvc_socket_wall(pvc) * 2, l=l, anchor=CENTER);
+                // the ring reaches 0.01mm inside the pipe's OD, so where it overlaps the pipe section it's
+                // attached to, the two genuinely overlap (touching surfaces leave non-manifold edges, and
+                // with fit clearance they wouldn't touch at all); the endpoint's negative cuts the socket's
+                // full bore (pipe OD plus any fit clearance) where the pipe goes in
+                tube(id=od - 0.02, od=_pvc_socket_outer_d(pvc), l=l, anchor=CENTER);
 
             } else if (type == "fipt") {
                 // NPT female threads accept a real pipe, so they're wider than the pipe's OD: the body
@@ -1889,6 +1902,23 @@ module pvc_endpoint(pvc, type="spigot", length=undef,
         }
     }
 }
+/// Function: _pvc_socket_bore_d()
+/// Synopsis: Internal function giving the bore diameter of socket endpoints
+/// Description:
+///   The pipe's outer diameter when `$pvc_fit_clearance` is unset (the default). When set, the bore
+///   is the pipe's OD plus that clearance, enlarged so the flats of its polygon - not just its
+///   corners - clear the pipe, so a pipe of the chosen size always fits.
+function _pvc_socket_bore_d(pvc) =
+    is_undef($pvc_fit_clearance) ? pvc_socket_id(pvc)
+    : assert(is_num($pvc_fit_clearance) && $pvc_fit_clearance >= 0,
+             "openscad_pvc: $pvc_fit_clearance must be a non-negative number")
+      let(d = pvc_socket_id(pvc) + $pvc_fit_clearance) d / cos(180 / segs(d/2));
+
+/// Function: _pvc_socket_outer_d()
+/// Synopsis: Internal function giving the outer diameter of socket endpoints: the bore plus its walls
+function _pvc_socket_outer_d(pvc) = _pvc_socket_bore_d(pvc) + _pvc_socket_wall(pvc) * 2;
+
+
 /// Function: _pvc_socket_wall()
 /// Synopsis: Internal function giving the wall thickness of socket endpoints
 /// Description:

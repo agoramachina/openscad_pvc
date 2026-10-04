@@ -233,9 +233,9 @@ function pvc_spec_lookup(schedule, name=undef, dn=undef, od=undef, wall=undef, t
 module pvc_pipe(pvc, length, ends=[], 
         anchor=PVC_DEFAULT_ANCHOR, spin=PVC_DEFAULT_SPIN, orient=PVC_DEFAULT_ORIENT) {
     od = pvc_od(pvc);
-    id = pvc_id(pvc);
+    id = _pvc_bore_d(pvc);
     tl = pvc_tl(pvc);
-    wall = pvc_wall(pvc);
+    wall = _pvc_body_wall(pvc);
     transition_len = tl * 0.1;
 
     truncated_len = length - (tl * 2);
@@ -323,7 +323,7 @@ module pvc_elbow(pvc, angle, ends=[], bend_radius=undef, extend=0,
         anchor=PVC_DEFAULT_ANCHOR, spin=PVC_DEFAULT_SPIN, orient=PVC_DEFAULT_ORIENT) {
     ends_ = list_apply_defaults(ends, ["socket", "socket"]);
     od = pvc_od(pvc);
-    id = pvc_id(pvc);
+    id = _pvc_bore_d(pvc);
     tl = pvc_tl(pvc);
     segment_len = tl + 1 + extend;
     r = is_undef(bend_radius) ? od/2 : bend_radius;
@@ -643,7 +643,7 @@ module pvc_corner(pvc, ends=[], extend=0,
         anchor=PVC_DEFAULT_ANCHOR, spin=PVC_DEFAULT_SPIN, orient=PVC_DEFAULT_ORIENT) {
     ends_ = list_apply_defaults(ends, ["socket", "socket", "socket"]);
     od = pvc_od(pvc);
-    id = pvc_id(pvc);
+    id = _pvc_bore_d(pvc);
     tl = pvc_tl(pvc); 
     tee_pipe_len = sum([ tl, od/2, extend ]);
     total_pipe_height = sum([ tee_pipe_len, od/2 ]);
@@ -1486,7 +1486,7 @@ module pvc_flange(pvc, ends=[], mounts=4, mount_diam=0,
             up(0.01) pvc_part_component(pvc, end=ends_[1], length=flange_height - 0.01, anchor=BOTTOM); // B
             tag("pvc_rem__full")
                 down(0.01)
-                    cylinder(d=pvc_id(pvc), h=flange_height, anchor=BOTTOM);
+                    cylinder(d=_pvc_bore_d(pvc), h=flange_height, anchor=BOTTOM);
             tag("pvc_rem__full")
                 zrot_copies(n=mounts, r=(flange_diam / 2) - (flange_mount_diam / 2) - 1)
                     cylinder(d=flange_mount_diam, h=flange_height + 0.01, anchor=BOTTOM);
@@ -1532,6 +1532,18 @@ module pvc_union(pvc,
 //   all known specifications within `_PVC_specs_raw` to extract the 
 //   unique schedules.
 ///   **NOTE:** this dynamic assignment is below in this LibFile, *after* the declaration of _PVC_specs_raw.
+
+// Constant: $pvc_extra_thickness
+// Description:
+//   Extra wall thickness for 3D-printed parts, in `mm`, added on whichever side of each surface isn't
+//   a fit surface, so pipes still fit: pipe sections (part bodies, arms, pipes) and spigot and male-thread
+//   ends thicken inward (a smaller bore); sockets and female-thread ends thicken outward. Inner spigots
+//   keep their outer size (it fits inside a pipe) and thicken inward. Part lengths and anchors don't
+//   change. Unset (the default), walls match the PVC spec. (Adapters, bushings, and nipples don't use
+//   it yet.)
+// Example:
+//   $pvc_extra_thickness = 1;
+//   pvc_tee(pvc_spec_lookup(40, dn="DN20"));
 
 // Constant: $pvc_fit_clearance
 // Description:
@@ -1684,8 +1696,8 @@ module pvc_part_component(pvc, end="socket", length=undef, socket_overlap=3, soc
 
     tl = pvc_tl(pvc);
     od = pvc_od(pvc);
-    id = pvc_id(pvc);
-    wall = pvc_wall(pvc);
+    id = _pvc_bore_d(pvc);
+    wall = _pvc_body_wall(pvc);
 
     pipe_len = (length == 0)
         ? 0.0001  // to silence truncation errors
@@ -1787,7 +1799,7 @@ module pvc_endpoint_negative(pvc, type="spigot", length=undef) {
         assert(in_list(type, PVC_ENDTYPES), str("pvc_endpoint_negative(): specified type ", type, " not known"));
 
         od = (type == "socket" || type == "fipt") ? pvc_socket_od(pvc) : pvc_od(pvc);
-        id = (type == "socket") ? _pvc_socket_bore_d(pvc) : (type == "fipt") ? pvc_socket_id(pvc) : pvc_id(pvc);
+        id = (type == "socket") ? _pvc_socket_bore_d(pvc) : (type == "fipt") ? pvc_socket_id(pvc) : _pvc_bore_d(pvc);
         l = (_defined(length) && length > 0) ? length : pvc_tl(pvc);
         a_diam = (type == "socket") ? od : id;
 
@@ -1844,6 +1856,9 @@ module pvc_endpoint(pvc, type="spigot", length=undef,
         od = pvc_od(pvc);
         id = pvc_id(pvc);
         wall = pvc_wall(pvc);
+        // $pvc_extra_thickness goes on whichever side of an end isn't a fit surface
+        bore = _pvc_bore_d(pvc);
+        extra = _pvc_extra_thickness();
         attachable_od = (type == "socket") ? _pvc_socket_outer_d(pvc) : od;
 
         overlap = (type == "socket") ? 3 : 0;
@@ -1854,10 +1869,12 @@ module pvc_endpoint(pvc, type="spigot", length=undef,
 
         attachable(anchor, spin, orient, d=attachable_od, l=l) {
             if (type == "spigot") {
-                tube(od=od, wall=wall, l=l, anchor=CENTER);
+                // the outside fits a socket, so thicken inward
+                tube(od=od, wall=wall + extra, l=l, anchor=CENTER);
 
             } else if (type == "ispigot") {
-                tube(od=id, wall=wall, l=l, anchor=CENTER);
+                // the outside fits inside a pipe, so thicken inward
+                tube(od=id, wall=wall + extra, l=l, anchor=CENTER);
 
             } else if (type == "mipt") {
                 difference() {
@@ -1869,7 +1886,7 @@ module pvc_endpoint(pvc, type="spigot", length=undef,
                             bevel1=false, bevel2=true, // bevel only the free end; newer BOSL2 bevels eat through the joined end
                             internal=false, 
                             anchor=CENTER);
-                    cylinder(d=id, h=l + 0.001, anchor=CENTER);
+                    cylinder(d=bore, h=l + 0.001, anchor=CENTER);  // male threads are the outside fit, so thicken inward
                 }
 
             } else if (type == "socket") {
@@ -1884,12 +1901,12 @@ module pvc_endpoint(pvc, type="spigot", length=undef,
                 // grows to socket size, with a full wall around the threads
                 if (_pvc_use_npt(pvc))
                     difference() {
-                        cylinder(d=pvc_socket_od(pvc), h=l, anchor=CENTER);
+                        cylinder(d=pvc_socket_od(pvc) + extra * 2, h=l, anchor=CENTER);  // threads are the inside fit: thicken outward
                         _pvc_npt_thread(pvc, l, internal=true);
                     }
                 else
                     difference() {
-                        tube(od=od, wall=wall, l=l, anchor=CENTER);
+                        tube(od=od + extra * 2, wall=wall + extra, l=l, anchor=CENTER);  // threads are the inside fit: thicken outward
                         threaded_rod(d=id + wall, l=l + 0.001,
                             pitch=pvc_pitch(pvc),
                             bevel1=false, bevel2=true, // bevel only the free end; newer BOSL2 bevels eat through the joined end
@@ -1924,9 +1941,29 @@ function _pvc_socket_outer_d(pvc) = _pvc_socket_bore_d(pvc) + _pvc_socket_wall(p
 /// Description:
 ///   `$pvc_socket_wall` if set, otherwise a third of the PVC object's wall thickness (the default).
 function _pvc_socket_wall(pvc) =
-    is_undef($pvc_socket_wall) ? pvc_wall(pvc) / 3
-    : assert(is_num($pvc_socket_wall) && $pvc_socket_wall > 0, "openscad_pvc: $pvc_socket_wall must be a positive number")
-      $pvc_socket_wall;
+    (is_undef($pvc_socket_wall) ? pvc_wall(pvc) / 3
+     : assert(is_num($pvc_socket_wall) && $pvc_socket_wall > 0, "openscad_pvc: $pvc_socket_wall must be a positive number")
+       $pvc_socket_wall)
+    + _pvc_extra_thickness();  // a socket's bore is its fit surface, so extra thickness goes outward
+
+/// Function: _pvc_extra_thickness()
+/// Synopsis: Internal function giving `$pvc_extra_thickness`, or 0 when unset
+function _pvc_extra_thickness() =
+    is_undef($pvc_extra_thickness) ? 0
+    : assert(is_num($pvc_extra_thickness) && $pvc_extra_thickness >= 0,
+             "openscad_pvc: $pvc_extra_thickness must be a non-negative number")
+      $pvc_extra_thickness;
+
+/// Function: _pvc_bore_d()
+/// Synopsis: Internal function giving the bore of pipe sections: the pipe's ID, less any extra thickness
+function _pvc_bore_d(pvc) =
+    let(d = pvc_id(pvc) - 2 * _pvc_extra_thickness())
+    assert(d > 0, str("openscad_pvc: $pvc_extra_thickness ", _pvc_extra_thickness(), "mm closes the ", pvc_name(pvc), "in pipe's bore"))
+    d;
+
+/// Function: _pvc_body_wall()
+/// Synopsis: Internal function giving the wall of pipe sections: the pipe's wall plus any extra thickness
+function _pvc_body_wall(pvc) = pvc_wall(pvc) + _pvc_extra_thickness();
 
 
 /// Constant: _PVC_NPT_SIZES

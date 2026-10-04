@@ -369,7 +369,8 @@ module pvc_elbow(pvc, angle, ends=[], bend_radius=undef, extend=0,
     module bend(region, over=0)
         right(r) zrot(180) up(bend_z) rotate_sweep(region, angle + 2 * over, spin=-over, orient=FWD);
     // Half-spaces on either side of the bend's bisector plane, through the pivot axis. `over` pushes the
-    // boundary past the bisector, so bore negatives overlap there instead of sharing faces with the walls.
+    // boundary past the bisector so the two ends (and their bore negatives) overlap slightly there:
+    // halves that only touch on the plane leave non-manifold edges, since their facets don't line up.
     big = 4 * (segment_len + r + od);
     module a_side(over=0) up(bend_z) right(r) yrot(angle/2) down(big/2 - over) cube(big, center=true);
     module b_side(over=0) up(bend_z) right(r) yrot(angle/2) up(big/2 - over) cube(big, center=true);
@@ -389,8 +390,8 @@ module pvc_elbow(pvc, angle, ends=[], bend_radius=undef, extend=0,
             // end up floating inside the pipe.
             difference() {
                 union() {
-                    intersection() { a_side(); hide("pvc_rem__full") end_a(); }
-                    intersection() { b_side(); hide("pvc_rem__full") end_b(); }
+                    intersection() { a_side(over=0.01); hide("pvc_rem__full") end_a(); }
+                    intersection() { b_side(over=0.01); hide("pvc_rem__full") end_b(); }
                     if (r > 0) bend(bend_outer, over=0.5);
                 }
                 union() {

@@ -296,6 +296,8 @@ module pvc_pipe(pvc, length, ends=[],
 //   angle = The angle in degrees to bend the elbow
 //   ---
 //   ends = A list of the two end types, `A` and `B`. Default: `["socket", "socket"]`
+//   bend_radius = Radius of the bend, measured from the pivot to the pipe's centerline, in `mm`. `0` makes a tight L-shaped elbow with a rounded outer corner. Default: `undef` (half the pipe's outer diameter)
+//   extend = Extra straight length added to every arm of the part, in `mm`. Default: `0`
 //   anchor = Translate so anchor point is at origin `[0,0,0]`. Default: `PVC_DEFAULT_ANCHOR`
 //   spin = Rotate this many degrees around the Z axis after anchoring. Default: `PVC_DEFAULT_SPIN`
 //   orient = Vector direction to which the model should point after spin. Default: `PVC_DEFAULT_ORIENT`
@@ -317,57 +319,73 @@ module pvc_pipe(pvc, length, ends=[],
 // Example: an 90-degree elbow with female threads
 //   pvc_elbow(pvc_a, 90, ends=["fipt", "fipt"]);
 //
-module pvc_elbow(pvc, angle, ends=[],
+module pvc_elbow(pvc, angle, ends=[], bend_radius=undef, extend=0,
         anchor=PVC_DEFAULT_ANCHOR, spin=PVC_DEFAULT_SPIN, orient=PVC_DEFAULT_ORIENT) {
     ends_ = list_apply_defaults(ends, ["socket", "socket"]);
     od = pvc_od(pvc);
     id = pvc_id(pvc);
     tl = pvc_tl(pvc);
-    segment_len = tl + 1;
-    curved_region = right(od/2, p=difference( circle(d=od), circle(d=id) ));
+    segment_len = tl + 1 + extend;
+    r = is_undef(bend_radius) ? od/2 : bend_radius;
+    assert(r >= 0, "pvc_elbow(): bend_radius can't be negative");
+    // Bend cross-sections, clipped to x >= 0.01 so tight bends (r < od/2) don't cross - or touch - the
+    // rotation axis; sweeping a shape that touches its axis leaves degenerate zero-thickness faces.
+    // The bore is swept separately and diff'd away, which keeps the pipe hollow at any radius.
+    half_plane = right(r + od + 0.01, p=square(2 * (r + od), center=true));
+    bend_outer = intersection(right(r, p=circle(d=od)), half_plane);
+    bend_inner = intersection(right(r, p=circle(d=id)), half_plane);
+    // B's base sits on the end of the bend; its anchor is centered in its threaded length, like A's
+    bend_end = apply(yrot(angle, cp=[r, 0, segment_len/2]), [0, 0, segment_len/2]);
     
     anchors = [
         named_anchor("A", [0, 0, -1 * segment_len/2 + tl/2], DOWN, 0),
-        // translating the anchor point for 'B' looks a bit nuts; here's whats happening:
-        // we start at the center of the lower pipe segment, and move up() half the length of the 
-        // segment to the center of the top of the pipe (or, the center of the bottom of the 
-        // sweep'd segment). From there, we rotate `angle` degrees, using a pivot point that 
-        // that is the right+top edge of the lower pipe. That rotation puts us at the center 
-        // of the bottom of the upper pipe. From there, we move up() half the length of the segment 
-        // again. To get the anchor in the center of the threaded length, we have to then rotate 
-        // using the base of the upper pipe as a pivot: so, we re-calculate all those moves 
-        // again to get the yrot() `cp`, and rotate `angle` degrees again. 
-        // For those of you asking "why don't you just create a sphere and angle pipes and 
-        // and anchors from that?", my answer is, because it's hella ugly. 
-        named_anchor("B", 
-            apply(
-                    yrot(angle, cp=apply(
-                        yrot(angle, cp=apply(up(segment_len/2) * right(od/2), CENTER))
-                        * up(segment_len/2),
-                        CENTER))
-                    * up(segment_len/2)
-                    * yrot(angle, cp=apply(up(segment_len/2) * right(od/2), CENTER)) 
-                    * up(segment_len/2),
-                CENTER), 
-            apply(yrot(angle), UP), 0),
+        named_anchor("B", bend_end + apply(yrot(angle), UP) * (1 + extend + tl/2), apply(yrot(angle), UP), 0),
     ];
+    // The two straight ends and the bend, shared by both construction paths below
+    module end_a() pvc_part_component(pvc, end=ends_[0], length=1 + extend, anchor=CENTER, orient=DOWN);
+    // B: pivot around the bend's center, then place the component's base on the sweep's end face.
+    // (Positioned directly rather than via attach() to a tiny sphere, which newer BOSL2 offsets.)
+    module end_b()
+        up(segment_len/2) right(r) yrot(angle) left(r) up(segment_len/2)
+            pvc_part_component(pvc, length=1 + extend, end=ends_[1], anchor=CENTER);
+    // no anchor on the sweep: newer BOSL2 centers a partial sweep's bounding box on CENTER, shifting the bend
+    // `over` (degrees) sweeps a little past both ends, so the bend overlaps each straight end instead of
+    // meeting it face-to-face: faceted rings and cylinders don't line up exactly, and flush faces leave
+    // zero-thickness slivers. The bore sweeps further than the wall so their end faces don't coincide either.
+    module bend(region, over=0)
+        right(r) zrot(180) up(segment_len/2) rotate_sweep(region, angle + 2 * over, spin=-over, orient=FWD);
+    // Half-spaces on either side of the bend's bisector plane, through the pivot axis. `over` pushes the
+    // boundary past the bisector, so bore negatives overlap there instead of sharing faces with the walls.
+    big = 4 * (segment_len + r + od);
+    module a_side(over=0) up(segment_len/2) right(r) yrot(angle/2) down(big/2 - over) cube(big, center=true);
+    module b_side(over=0) up(segment_len/2) right(r) yrot(angle/2) up(big/2 - over) cube(big, center=true);
+
     attachable(anchor, spin, orient, d=od, h=segment_len, anchors=anchors) {
-        diff("pvc_rem__full")
-            union() {
-                pvc_part_component(pvc, end=ends_[0], length=1, anchor=CENTER, orient=DOWN);
-                    right(od/2)
-                        zrot(180)
-                            up(segment_len/2)
-                                rotate_sweep(curved_region, angle, spin=0, orient=FWD); // no anchor: newer BOSL2 centers a partial sweep's bounding box on CENTER, shifting the bend
-                // B: pivot around the bend's center, then place the component's base on the sweep's end face.
-                // (Positioned directly rather than via attach() to a tiny sphere, which newer BOSL2 offsets.)
-                up(segment_len/2)
-                    right(od/2)
-                        yrot(angle)
-                            left(od/2)
-                                up(segment_len/2)
-                                    pvc_part_component(pvc, length=1, end=ends_[1], anchor=CENTER);
+        if (r >= od/2) {
+            diff("pvc_rem__full")
+                union() {
+                    end_a();
+                    bend(bend_outer, over=0.5);
+                    tag("pvc_rem__full") bend(bend_inner, over=1);
+                    end_b();
+                }
+        } else {
+            // Tight bends: the straight ends overlap near the inside of the bend. Miter them at the
+            // bisector - solids and their bore negatives alike - before cutting, or wall fragments
+            // end up floating inside the pipe.
+            difference() {
+                union() {
+                    intersection() { a_side(); hide("pvc_rem__full") end_a(); }
+                    intersection() { b_side(); hide("pvc_rem__full") end_b(); }
+                    bend(bend_outer, over=0.5);
+                }
+                union() {
+                    intersection() { a_side(over=0.01); show_only("pvc_rem__full") end_a(); }
+                    intersection() { b_side(over=0.01); show_only("pvc_rem__full") end_b(); }
+                    bend(bend_inner, over=1);
+                }
             }
+        }
         children();
     }
 }
@@ -397,6 +415,7 @@ module pvc_elbow(pvc, angle, ends=[],
 //   pvc = An instantiated PVC specification
 //   ---
 //   ends = A list of the three end types, `A`, `B`, & `C`. Default: `["socket", "socket", "socket"]`
+//   extend = Extra straight length added to every arm of the part, in `mm`. Default: `0`
 //   anchor = Translate so anchor point is at origin `[0,0,0]`. Default: `PVC_DEFAULT_ANCHOR`
 //   spin = Rotate this many degrees around the Z axis after anchoring. Default: `PVC_DEFAULT_SPIN`
 //   orient = Vector direction to which the model should point after spin. Default: `PVC_DEFAULT_ORIENT`
@@ -416,13 +435,13 @@ module pvc_elbow(pvc, angle, ends=[],
 // Example: a simple wye
 //   pvc_wye(pvc_a);
 //
-module pvc_wye(pvc, ends=[],
+module pvc_wye(pvc, ends=[], extend=0,
         anchor=PVC_DEFAULT_ANCHOR, spin=PVC_DEFAULT_SPIN, orient=PVC_DEFAULT_ORIENT) {
     ends_ = list_apply_defaults(ends, ["socket", "socket", "socket"]);
     od = pvc_od(pvc);
     id = pvc_id(pvc);
     tl = pvc_tl(pvc);
-    part_addl = tl * 4; 
+    part_addl = tl * 4 + extend;
     segment_len = tl + part_addl;
     total_part_height = sum([ 
         segment_len,
@@ -476,6 +495,7 @@ module pvc_wye(pvc, ends=[],
 //   pvc = An instantiated PVC specification
 //   ---
 //   ends = A list of the three end types, `A`, `B`, & `C`. Default: `["socket", "socket", "socket"]`
+//   extend = Extra straight length added to every arm of the part, in `mm`. Default: `0`
 //   anchor = Translate so anchor point is at origin `[0,0,0]`. Default: `PVC_DEFAULT_ANCHOR`
 //   spin = Rotate this many degrees around the Z axis after anchoring. Default: `PVC_DEFAULT_SPIN`
 //   orient = Vector direction to which the model should point after spin. Default: `PVC_DEFAULT_ORIENT`
@@ -498,7 +518,7 @@ module pvc_wye(pvc, ends=[],
 // Example: a tee with a variety of end types
 //   pvc_tee(pvc_a, ends=["socket", "mipt", "fipt"]);
 //
-module pvc_tee(pvc, ends=[],
+module pvc_tee(pvc, ends=[], extend=0,
         anchor=PVC_DEFAULT_ANCHOR, spin=PVC_DEFAULT_SPIN, orient=PVC_DEFAULT_ORIENT) {
     ends_ = list_apply_defaults(ends, ["socket", "socket", "socket"]);
     od = pvc_od(pvc);
@@ -506,20 +526,20 @@ module pvc_tee(pvc, ends=[],
     tl = pvc_tl(pvc);
     tee_pipe_len = sum([ tl,  pvc_socket_od(pvc) ]);
     total_pipe_len = tee_pipe_len * 2;
-    total_tee_height = sum([ tl, od/2, od/2, tl ]);
+    total_tee_height = sum([ tl, od/2, od/2, tl, extend * 2 ]);
 
     anchors = [
         named_anchor("A", [0, 0, -1 * total_tee_height/2 + tl/2], DOWN, 0),
         named_anchor("B", [0, 0, total_tee_height/2 - tl/2], UP, 0),
-        named_anchor("C", [tl/2 + od/2, 0, 0], RIGHT, 0)
+        named_anchor("C", [tl/2 + od/2 + extend, 0, 0], RIGHT, 0)
     ];
     attachable(anchor, spin, orient, d=od, h=total_tee_height, anchors=anchors) {
         diff("pvc_rem__full", "pvc_keep__full")
-            pvc_part_component(pvc, end=ends_[0], length=od/2, anchor=BOTTOM) { // A
+            pvc_part_component(pvc, end=ends_[0], length=od/2 + extend, anchor=BOTTOM) { // A
                 attach("_j_down", "_j_down")
-                    pvc_part_component(pvc, end=ends_[1], length=od/2); // B
+                    pvc_part_component(pvc, end=ends_[1], length=od/2 + extend); // B
                 attach("_j_right", "_j_down")
-                    pvc_part_component(pvc, length=od/2, end=ends_[2]); // C
+                    pvc_part_component(pvc, length=od/2 + extend, end=ends_[2]); // C
             }
         children();
     }
@@ -549,6 +569,7 @@ module pvc_tee(pvc, ends=[],
 //   pvc = An instantiated PVC specification
 //   ---
 //   ends = A list of the three end types, `A`, `B`, & `C`. Default: `["socket", "socket", "socket"]`
+//   extend = Extra straight length added to every arm of the part, in `mm`. Default: `0`
 //   anchor = Translate so anchor point is at origin `[0,0,0]`. Default: `PVC_DEFAULT_ANCHOR`
 //   spin = Rotate this many degrees around the Z axis after anchoring. Default: `PVC_DEFAULT_SPIN`
 //   orient = Vector direction to which the model should point after spin. Default: `PVC_DEFAULT_ORIENT`
@@ -568,13 +589,13 @@ module pvc_tee(pvc, ends=[],
 // Example: a simple corner
 //   pvc_corner(pvc_a);
 //
-module pvc_corner(pvc, ends=[],
+module pvc_corner(pvc, ends=[], extend=0,
         anchor=PVC_DEFAULT_ANCHOR, spin=PVC_DEFAULT_SPIN, orient=PVC_DEFAULT_ORIENT) {
     ends_ = list_apply_defaults(ends, ["socket", "socket", "socket"]);
     od = pvc_od(pvc);
     id = pvc_id(pvc);
     tl = pvc_tl(pvc); 
-    tee_pipe_len = sum([ tl, od/2 ]);
+    tee_pipe_len = sum([ tl, od/2, extend ]);
     total_pipe_height = sum([ tee_pipe_len, od/2 ]);
 
     anchors = [
@@ -596,11 +617,11 @@ module pvc_corner(pvc, ends=[],
                         tag("pvc_rem__full") 
                             sphere(d=id);
                     attach(TOP, "_j_down", overlap=od/2)
-                        pvc_part_component(pvc, length=od/2, end=ends_[1]); // B
+                        pvc_part_component(pvc, length=od/2 + extend, end=ends_[1]); // B
                     attach(RIGHT, "_j_down", overlap=od/2)
-                        pvc_part_component(pvc, length=od/2, end=ends_[2]); // C
+                        pvc_part_component(pvc, length=od/2 + extend, end=ends_[2]); // C
                     attach(FWD, "_j_down", overlap=od/2)
-                        pvc_part_component(pvc, length=od/2, end=ends_[0]); // A
+                        pvc_part_component(pvc, length=od/2 + extend, end=ends_[0]); // A
                 }
             }
         children();
@@ -632,6 +653,7 @@ module pvc_corner(pvc, ends=[],
 //   pvc = An instantiated PVC specification
 //   ---
 //   ends = A list of the four end types, `A`, `B`, `C`, & `D`. Default: `["socket", "socket", "socket", "socket"]`
+//   extend = Extra straight length added to every arm of the part, in `mm`. Default: `0`
 //   anchor = Translate so anchor point is at origin `[0,0,0]`. Default: `PVC_DEFAULT_ANCHOR`
 //   spin = Rotate this many degrees around the Z axis after anchoring. Default: `PVC_DEFAULT_SPIN`
 //   orient = Vector direction to which the model should point after spin. Default: `PVC_DEFAULT_ORIENT`
@@ -655,14 +677,14 @@ module pvc_corner(pvc, ends=[],
 // Example: a tee with a variety of end types
 //   pvc_side_outlet_tee(pvc_a, ends=["socket", "mipt", "fipt"]);
 //
-module pvc_side_outlet_tee(pvc, ends=[],
+module pvc_side_outlet_tee(pvc, ends=[], extend=0,
         anchor=PVC_DEFAULT_ANCHOR, spin=PVC_DEFAULT_SPIN, orient=PVC_DEFAULT_ORIENT) {
     ends_ = list_apply_defaults(ends, ["socket", "socket", "socket", "socket"]);
     od = pvc_socket_od(pvc);
     id = pvc_socket_id(pvc);
     tl = pvc_tl(pvc);
     h_tl = tl/2;
-    tee_pipe_len = sum([ tl, od/2 ]);
+    tee_pipe_len = sum([ tl, od/2, extend ]);
     total_pipe_height = tee_pipe_len * 2;
 
     anchors = [
@@ -674,13 +696,13 @@ module pvc_side_outlet_tee(pvc, ends=[],
     attachable(anchor, spin, orient, d=od, h=total_pipe_height, anchors=anchors) {
         up(total_pipe_height/2)
         diff("pvc_rem__full") 
-            pvc_part_component(pvc, length=od/2, end=ends_[1], anchor=TOP) {   // B
+            pvc_part_component(pvc, length=od/2 + extend, end=ends_[1], anchor=TOP) {   // B
                 attach("_j_down", "_j_down")
-                    pvc_part_component(pvc, length=od/2, end=ends_[0]);  // A
+                    pvc_part_component(pvc, length=od/2 + extend, end=ends_[0]);  // A
                 attach("_j_right", "_j_down")
-                    pvc_part_component(pvc, length=od/2, end=ends_[2]);  // C
+                    pvc_part_component(pvc, length=od/2 + extend, end=ends_[2]);  // C
                 attach("_j_fwd", "_j_down")
-                    pvc_part_component(pvc, length=od/2, end=ends_[3]);  // D
+                    pvc_part_component(pvc, length=od/2 + extend, end=ends_[3]);  // D
             }
         children();
     }
@@ -710,6 +732,7 @@ module pvc_side_outlet_tee(pvc, ends=[],
 //   pvc = An instantiated PVC specification
 //   ---
 //   ends = A list of the four end types, `A`, `B`, `C`, & `D`. Default: `["socket", "socket", "socket", "socket"]`
+//   extend = Extra straight length added to every arm of the part, in `mm`. Default: `0`
 //   anchor = Translate so anchor point is at origin `[0,0,0]`. Default: `PVC_DEFAULT_ANCHOR`
 //   spin = Rotate this many degrees around the Z axis after anchoring. Default: `PVC_DEFAULT_SPIN`
 //   orient = Vector direction to which the model should point after spin. Default: `PVC_DEFAULT_ORIENT`
@@ -733,13 +756,13 @@ module pvc_side_outlet_tee(pvc, ends=[],
 // Example: a tee with a variety of end types
 //   pvc_cross(pvc_a, ends=["socket", "mipt", "fipt", "spigot"]);
 //
-module pvc_cross(pvc, ends=[],
+module pvc_cross(pvc, ends=[], extend=0,
         anchor=PVC_DEFAULT_ANCHOR, spin=PVC_DEFAULT_SPIN, orient=PVC_DEFAULT_ORIENT) {
     ends_ = list_apply_defaults(ends, ["socket", "socket", "socket", "socket"]);
     od = pvc_od(pvc);
     tl = pvc_tl(pvc);
     h_tl = tl / 2;
-    tee_pipe_length = sum([ tl, od/2 ]);
+    tee_pipe_length = sum([ tl, od/2, extend ]);
     total_pipe_height = tee_pipe_length * 2;
     h_total_pipe_height = total_pipe_height / 2;
     
@@ -752,13 +775,13 @@ module pvc_cross(pvc, ends=[],
     attachable(anchor, spin, orient, d=od, h=total_pipe_height, anchors=anchors) {
         up(total_pipe_height/2)
         diff("pvc_rem__full")
-            pvc_part_component(pvc, length=od/2, end=ends_[1], anchor=TOP) {   // B
+            pvc_part_component(pvc, length=od/2 + extend, end=ends_[1], anchor=TOP) {   // B
                 attach("_j_down", "_j_down")
-                    pvc_part_component(pvc, length=od/2, end=ends_[0]); // A
+                    pvc_part_component(pvc, length=od/2 + extend, end=ends_[0]); // A
                 attach("_j_right", "_j_down")
-                    pvc_part_component(pvc, length=od/2, end=ends_[2]);  // C
+                    pvc_part_component(pvc, length=od/2 + extend, end=ends_[2]);  // C
                 attach("_j_left", "_j_down")
-                    pvc_part_component(pvc, length=od/2, end=ends_[3]);  // D
+                    pvc_part_component(pvc, length=od/2 + extend, end=ends_[3]);  // D
             }
         children();
     }
@@ -788,6 +811,7 @@ module pvc_cross(pvc, ends=[],
 //   pvc = An instantiated PVC specification
 //   ---
 //   ends = A list of the six end types, `A`, `B`, `C`, `D`, `E`, & `F`. Default: `["socket", ...]`
+//   extend = Extra straight length added to every arm of the part, in `mm`. Default: `0`
 //   anchor = Translate so anchor point is at origin `[0,0,0]`. Default: `PVC_DEFAULT_ANCHOR`
 //   spin = Rotate this many degrees around the Z axis after anchoring. Default: `PVC_DEFAULT_SPIN`
 //   orient = Vector direction to which the model should point after spin. Default: `PVC_DEFAULT_ORIENT`
@@ -813,12 +837,12 @@ module pvc_cross(pvc, ends=[],
 // Example: a tee with a variety of end types
 //   pvc_six_way_joint(pvc_a, ends=["socket", "mipt", "fipt", "spigot"]);
 //
-module pvc_six_way_joint(pvc, ends=[],
+module pvc_six_way_joint(pvc, ends=[], extend=0,
         anchor=PVC_DEFAULT_ANCHOR, spin=PVC_DEFAULT_SPIN, orient=PVC_DEFAULT_ORIENT) {
     ends_ = list_apply_defaults(ends, ["socket", "socket", "socket", "socket", "socket", "socket"]);
     od = pvc_od(pvc);
     tl = pvc_tl(pvc);
-    part_len_addl = od/2 + 2;
+    part_len_addl = od/2 + 2 + extend;
     tee_pipe_len = tl + part_len_addl;
     total_pipe_len = tee_pipe_len * 2;
 
@@ -872,6 +896,7 @@ module pvc_six_way_joint(pvc, ends=[],
 //   pvc = An instantiated PVC specification
 //   ---
 //   ends = A list of the two end types, `A` and `B`. Default: `["socket", "socket"]`
+//   extend = Extra straight length added to every arm of the part, in `mm`. Default: `0`
 //   anchor = Translate so anchor point is at origin `[0,0,0]`. Default: `PVC_DEFAULT_ANCHOR`
 //   spin = Rotate this many degrees around the Z axis after anchoring. Default: `PVC_DEFAULT_SPIN`
 //   orient = Vector direction to which the model should point after spin. Default: `PVC_DEFAULT_ORIENT`
@@ -895,13 +920,13 @@ module pvc_six_way_joint(pvc, ends=[],
 // Example: a coupling with female threading on each end
 //   pvc_coupling(pvc_a, ends=["fipt", "fipt"]);
 //
-module pvc_coupling(pvc, ends=[],
+module pvc_coupling(pvc, ends=[], extend=0,
         anchor=PVC_DEFAULT_ANCHOR, spin=PVC_DEFAULT_SPIN, orient=PVC_DEFAULT_ORIENT) {
     // should we perhaps warn the caller if the coupler isn't socket/fipt? 
     ends_ = list_apply_defaults(ends, ["socket", "socket"]);
     od = pvc_od(pvc);
     tl = pvc_tl(pvc);
-    pipe_addl = 3;
+    pipe_addl = 3 + extend;
     pipe_len = sum([ tl, pipe_addl ]);
     total_pipe_len = pipe_len * 2;
     
@@ -941,6 +966,7 @@ module pvc_coupling(pvc, ends=[],
 //   pvc = An instantiated PVC specification
 //   ---
 //   ends = A list of the single end type, `A`. Default: `["socket"]`
+//   extend = Extra straight length added to the cap's socket, in `mm`. Default: `0`
 //   anchor = Translate so anchor point is at origin `[0,0,0]`. Default: `PVC_DEFAULT_ANCHOR`
 //   spin = Rotate this many degrees around the Z axis after anchoring. Default: `PVC_DEFAULT_SPIN`
 //   orient = Vector direction to which the model should point after spin. Default: `PVC_DEFAULT_ORIENT`
@@ -971,7 +997,7 @@ module pvc_coupling(pvc, ends=[],
 //   a cap perhaps doesn't need to have the same wall thickness as the pipe it's being attached to.
 //   caps probably also have a slightly domed top. :shrug:
 //
-module pvc_cap(pvc, ends=[],
+module pvc_cap(pvc, ends=[], extend=0,
         anchor=PVC_DEFAULT_ANCHOR, spin=PVC_DEFAULT_SPIN, orient=PVC_DEFAULT_ORIENT) {
 
     ends_ = list_apply_defaults(ends, ["socket"]);
@@ -980,7 +1006,7 @@ module pvc_cap(pvc, ends=[],
 
     od = (ends_[0] == "socket") ? pvc_od(pvc) + (pvc_wall(pvc)/3)*2 : pvc_od(pvc); 
     tl = pvc_tl(pvc);
-    pipe_addl = 1;
+    pipe_addl = 1 + extend;
     wall = pvc_wall(pvc);
     total_pipe_len = sum([ tl, pipe_addl, wall ]);
     

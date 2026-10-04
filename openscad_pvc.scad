@@ -1562,6 +1562,9 @@ module pvc_union(pvc,
 //   Wall thickness of `socket` endpoints, in `mm`. Unset (the default), sockets use a third of the
 //   pipe's wall thickness, which is thin for 3D printing (about 0.96mm for 3/4" schedule 40). Set it to
 //   reinforce the sockets on every part; the socket's bore always stays the pipe's outer diameter.
+//   Setting it also reinforces threaded endpoints, only ever adding material: female (`fipt`) ends get at
+//   least this much wall outside their threads, which makes them socket-like, and male (`mipt`) ends at
+//   least this much under their threads, shrinking the bore.
 // Example:
 //   $pvc_socket_wall = 3;
 //   pvc_tee(pvc_spec_lookup(40, dn="DN20"));
@@ -1859,6 +1862,14 @@ module pvc_endpoint(pvc, type="spigot", length=undef,
         // $pvc_extra_thickness goes on whichever side of an end isn't a fit surface
         bore = _pvc_bore_d(pvc);
         extra = _pvc_extra_thickness();
+        // $pvc_socket_wall also reinforces threaded ends, only ever adding material: at least that much
+        // wall under male threads (a smaller bore) and outside female threads (a socket-like body)
+        tw = _pvc_thread_wall();
+        mipt_bore = is_undef(tw) ? bore : min(bore, _pvc_mipt_root_d(pvc) - 2 * tw);
+        npt_fipt_od = pvc_socket_od(pvc) + extra * 2;
+        fipt_od = (type == "fipt" && _pvc_use_npt(pvc)) ? npt_fipt_od : od + extra * 2;
+        fipt_od_r = is_undef(tw) ? fipt_od : max(fipt_od, _pvc_fipt_major_d(pvc) + 2 * tw);
+        assert(type != "mipt" || mipt_bore > 0, str("openscad_pvc: a ", tw, "mm wall under the threads closes the ", pvc_name(pvc), "in male end's bore"));
         attachable_od = (type == "socket") ? _pvc_socket_outer_d(pvc) : od;
 
         overlap = (type == "socket") ? 3 : 0;
@@ -1886,7 +1897,7 @@ module pvc_endpoint(pvc, type="spigot", length=undef,
                             bevel1=false, bevel2=true, // bevel only the free end; newer BOSL2 bevels eat through the joined end
                             internal=false, 
                             anchor=CENTER);
-                    cylinder(d=bore, h=l + 0.001, anchor=CENTER);  // male threads are the outside fit, so thicken inward
+                    cylinder(d=mipt_bore, h=l + 0.001, anchor=CENTER);  // male threads are the outside fit, so thicken inward
                 }
 
             } else if (type == "socket") {
@@ -1901,12 +1912,12 @@ module pvc_endpoint(pvc, type="spigot", length=undef,
                 // grows to socket size, with a full wall around the threads
                 if (_pvc_use_npt(pvc))
                     difference() {
-                        cylinder(d=pvc_socket_od(pvc) + extra * 2, h=l, anchor=CENTER);  // threads are the inside fit: thicken outward
+                        cylinder(d=fipt_od_r, h=l, anchor=CENTER);  // threads are the inside fit: thicken outward
                         _pvc_npt_thread(pvc, l, internal=true);
                     }
                 else
                     difference() {
-                        tube(od=od + extra * 2, wall=wall + extra, l=l, anchor=CENTER);  // threads are the inside fit: thicken outward
+                        tube(od=fipt_od_r, wall=(fipt_od_r - id) / 2, l=l, anchor=CENTER);  // threads are the inside fit: thicken outward
                         threaded_rod(d=id + wall, l=l + 0.001,
                             pitch=pvc_pitch(pvc),
                             bevel1=false, bevel2=true, // bevel only the free end; newer BOSL2 bevels eat through the joined end
@@ -1969,12 +1980,14 @@ function _pvc_body_wall(pvc) = pvc_wall(pvc) + _pvc_extra_thickness();
 /// Constant: _PVC_NPT_SIZES
 /// Description:
 ///   PVC nominal names that BOSL2's `npt_threaded_rod()` supports: [name, NPT size in inches, standard
-///   thread length in inches]. The lengths mirror BOSL2's own NPT table, which isn't exposed outside
-///   that module.
+///   thread length in inches, thread OD in inches (at the large end), threads per inch]. The values
+///   mirror BOSL2's own NPT table, which isn't exposed outside that module.
 _PVC_NPT_SIZES = [
-    ["1/8", 1/8, 0.3924], ["1/4", 1/4, 0.5946], ["3/8", 3/8, 0.6006], ["1/2", 1/2, 0.7815],
-    ["3/4", 3/4, 0.7935], ["1", 1, 0.9845], ["1 1/4", 1+1/4, 1.0085], ["1 1/2", 1+1/2, 1.0252],
-    ["2", 2, 1.0582],
+    ["1/8",   1/8,   0.3924, 0.401, 27],   ["1/4",   1/4,   0.5946, 0.533, 18],
+    ["3/8",   3/8,   0.6006, 0.668, 18],   ["1/2",   1/2,   0.7815, 0.832, 14],
+    ["3/4",   3/4,   0.7935, 1.043, 14],   ["1",     1,     0.9845, 1.305, 11.5],
+    ["1 1/4", 1+1/4, 1.0085, 1.649, 11.5], ["1 1/2", 1+1/2, 1.0252, 1.888, 11.5],
+    ["2",     2,     1.0582, 2.362, 11.5],
 ];
 
 /// Function: _pvc_npt_size()
@@ -1998,6 +2011,35 @@ function _pvc_use_npt(pvc) =
     (want && is_undef(size))
         ? echo(str("openscad_pvc: no NPT thread data for ", pvc_name(pvc), "in; using the default threads")) false
         : want;
+
+
+/// Function: _pvc_thread_wall()
+/// Synopsis: Internal function giving the wall to keep around threads, or undef when unset
+/// Description:
+///   When `$pvc_socket_wall` is set, threaded endpoints are reinforced like sockets: female threads get
+///   at least that much wall outside their threads, male threads at least that much under them (plus
+///   any `$pvc_extra_thickness`). Unset, threaded endpoints are left as they are.
+function _pvc_thread_wall() = is_undef($pvc_socket_wall) ? undef : $pvc_socket_wall + _pvc_extra_thickness();
+
+/// Function: _pvc_thread_depth()
+/// Synopsis: Internal function giving BOSL2's thread profile depth for a pitch
+function _pvc_thread_depth(pitch) = pitch * cos(30) * 5/8;
+
+/// Function: _pvc_fipt_major_d()
+/// Synopsis: Internal function giving a female thread's outer (major) diameter, at its widest
+function _pvc_fipt_major_d(pvc) =
+    (!is_undef($pvc_thread_style) && $pvc_thread_style == "npt" && !is_undef(_pvc_npt_size(pvc)))
+        ? _pvc_npt_size(pvc)[3] * INCH
+        : pvc_id(pvc) + pvc_wall(pvc);
+
+/// Function: _pvc_mipt_root_d()
+/// Synopsis: Internal function giving a male thread's root (minor) diameter, at its narrowest
+/// Description:
+///   NPT threads taper 1:16 toward the free end, so the narrowest root is at the tip.
+function _pvc_mipt_root_d(pvc) =
+    (!is_undef($pvc_thread_style) && $pvc_thread_style == "npt" && !is_undef(_pvc_npt_size(pvc)))
+        ? let(n = _pvc_npt_size(pvc)) (n[3] - n[2] / 16) * INCH - 2 * _pvc_thread_depth(INCH / n[4])
+        : pvc_id(pvc) + pvc_wall(pvc) - 2 * _pvc_thread_depth(pvc_pitch(pvc));
 
 
 /// Module: _pvc_npt_thread()

@@ -1732,7 +1732,10 @@ module pvc_endpoint(pvc, type="spigot", length=undef,
                 }
 
             } else if (type == "socket") {
-                tube(id=od, wall=wall / 3, l=l, anchor=CENTER);
+                // the bore reaches 0.01mm inside the pipe's OD so the socket overlaps the pipe section it's
+                // attached to, rather than sharing a surface with it (which leaves non-manifold edges);
+                // the endpoint's negative still cuts the full OD-sized bore where the pipe goes in
+                tube(id=od - 0.02, od=od + wall / 3 * 2, l=l, anchor=CENTER);
 
             } else if (type == "fipt") {
                 difference() {

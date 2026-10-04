@@ -1531,6 +1531,20 @@ module pvc_union(pvc,
 //   unique schedules.
 ///   **NOTE:** this dynamic assignment is below in this LibFile, *after* the declaration of _PVC_specs_raw.
 
+// Constant: $pvc_thread_style
+// Description:
+//   Selects how `mipt` and `fipt` endpoints are threaded. Unset (the default), they use the
+//   library's original straight threads, sized to mate with each other. Set to "npt", sizes 1/8"
+//   through 2" use real tapered NPT pipe threads (via BOSL2's `npt_threaded_rod()`) that mate with
+//   standard pipe fittings: male threads are cut into the pipe's outer diameter, and female ends
+//   widen to socket size to accept a pipe. Larger sizes keep the default threads, with a console note.
+//   .
+//   Endpoint lengths come from the PVC object's `tl` attribute either way, and NPT threads are trimmed
+//   to that length from the end that joins the part.
+// Example:
+//   $pvc_thread_style = "npt";
+//   pvc_coupling(pvc_spec_lookup(40, dn="DN20"), ends=["mipt", "fipt"]);
+
 // Constant: PVC_ENDTYPES
 // Description:
 //   A list of supported endtypes for PVC parts: `spigot`, `socket`, `mipt`, & `fipt`.
@@ -1798,11 +1812,14 @@ module pvc_endpoint(pvc, type="spigot", length=undef,
 
             } else if (type == "mipt") {
                 difference() {
-                    threaded_rod(d=id + wall, l=l,
-                        pitch=pvc_pitch(pvc), 
-                        bevel1=false, bevel2=true, // bevel only the free end; newer BOSL2 bevels eat through the joined end
-                        internal=false, 
-                        anchor=CENTER);
+                    if (_pvc_use_npt(pvc))
+                        _pvc_npt_thread(pvc, l, internal=false);
+                    else
+                        threaded_rod(d=id + wall, l=l,
+                            pitch=pvc_pitch(pvc), 
+                            bevel1=false, bevel2=true, // bevel only the free end; newer BOSL2 bevels eat through the joined end
+                            internal=false, 
+                            anchor=CENTER);
                     cylinder(d=id, h=l + 0.001, anchor=CENTER);
                 }
 
@@ -1813,18 +1830,81 @@ module pvc_endpoint(pvc, type="spigot", length=undef,
                 tube(id=od - 0.02, od=od + wall / 3 * 2, l=l, anchor=CENTER);
 
             } else if (type == "fipt") {
-                difference() {
-                    tube(od=od, wall=wall, l=l, anchor=CENTER);
-                    threaded_rod(d=id + wall, l=l + 0.001,
-                        pitch=pvc_pitch(pvc),
-                        bevel1=false, bevel2=true, // bevel only the free end; newer BOSL2 bevels eat through the joined end
-                        internal=true,
-                        anchor=CENTER);
-                }
+                // NPT female threads accept a real pipe, so they're wider than the pipe's OD: the body
+                // grows to socket size, with a full wall around the threads
+                if (_pvc_use_npt(pvc))
+                    difference() {
+                        cylinder(d=pvc_socket_od(pvc), h=l, anchor=CENTER);
+                        _pvc_npt_thread(pvc, l, internal=true);
+                    }
+                else
+                    difference() {
+                        tube(od=od, wall=wall, l=l, anchor=CENTER);
+                        threaded_rod(d=id + wall, l=l + 0.001,
+                            pitch=pvc_pitch(pvc),
+                            bevel1=false, bevel2=true, // bevel only the free end; newer BOSL2 bevels eat through the joined end
+                            internal=true,
+                            anchor=CENTER);
+                    }
 
             }
             children();
         }
+    }
+}
+/// Constant: _PVC_NPT_SIZES
+/// Description:
+///   PVC nominal names that BOSL2's `npt_threaded_rod()` supports: [name, NPT size in inches, standard
+///   thread length in inches]. The lengths mirror BOSL2's own NPT table, which isn't exposed outside
+///   that module.
+_PVC_NPT_SIZES = [
+    ["1/8", 1/8, 0.3924], ["1/4", 1/4, 0.5946], ["3/8", 3/8, 0.6006], ["1/2", 1/2, 0.7815],
+    ["3/4", 3/4, 0.7935], ["1", 1, 0.9845], ["1 1/4", 1+1/4, 1.0085], ["1 1/2", 1+1/2, 1.0252],
+    ["2", 2, 1.0582],
+];
+
+/// Function: _pvc_npt_size()
+/// Synopsis: Internal function giving the NPT entry ([name, size, length]) for a PVC object, if any
+/// Description:
+///   Given a PVC object `pvc`, return its `_PVC_NPT_SIZES` entry, or `undef` for sizes BOSL2's NPT
+///   threads don't cover (they stop at 2").
+function _pvc_npt_size(pvc) =
+    let(found = [for (e = _PVC_NPT_SIZES) if (e[0] == pvc_name(pvc)) e])
+    len(found) > 0 ? found[0] : undef;
+
+
+/// Function: _pvc_use_npt()
+/// Synopsis: Internal function: whether threaded endpoints for `pvc` should use NPT threads
+/// Description:
+///   True when `$pvc_thread_style` is "npt" and the size is one BOSL2's NPT threads cover. Larger
+///   sizes fall back to the library's default threads, with a console note.
+function _pvc_use_npt(pvc) =
+    let(want = !is_undef($pvc_thread_style) && $pvc_thread_style == "npt",
+        size = _pvc_npt_size(pvc))
+    (want && is_undef(size))
+        ? echo(str("openscad_pvc: no NPT thread data for ", pvc_name(pvc), "in; using the default threads")) false
+        : want;
+
+
+/// Module: _pvc_npt_thread()
+/// Synopsis: Internal module: an NPT thread (or internal-thread mask) trimmed to an endpoint's length
+/// Description:
+///   Creates BOSL2's standard NPT thread for `pvc`'s size, centered on the origin and trimmed to `l`.
+///   The free (top) end of the standard thread is kept - its taper, and its lead-in bevel - and the
+///   excess is trimmed from the bottom, where the endpoint joins its part. This keeps endpoint lengths,
+///   and so every part's dimensions and anchors, the same as with the default threads.
+///   With `internal=true` this is a mask for cutting female threads, slightly overlong so it cuts
+///   cleanly through both ends.
+module _pvc_npt_thread(pvc, l, internal=false) {
+    npt = _pvc_npt_size(pvc);
+    size = npt[1];
+    npt_len = npt[2] * INCH;  // length of BOSL2's standard thread for this size
+    assert(npt_len >= l, str("openscad_pvc: endpoint length ", l, "mm is longer than the ", npt_len,
+        "mm NPT thread for ", pvc_name(pvc), "in"));
+    over = internal ? 0.01 : 0;
+    intersection() {
+        up(l/2 + over) npt_threaded_rod(size=size, internal=internal, bevel1=false, bevel2=true, anchor=TOP);
+        cylinder(d=pvc_socket_od(pvc) * 2, h=l + 2 * over, anchor=CENTER);
     }
 }
 

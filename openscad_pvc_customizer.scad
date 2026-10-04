@@ -40,24 +40,30 @@ end_E = "auto"; // [auto, socket, spigot, ispigot, mipt, fipt]
 // End F
 end_F = "auto"; // [auto, socket, spigot, ispigot, mipt, fipt]
 
-/* [Part Options] */
+/* [Pipe Options] */
 
-// Pipe length (pipe only, mm)
+// Total pipe length (mm)
 pipe_length = 50; // [5:1:1000]
 
-// Bend angle (elbow only, degrees)
+/* [Elbow Options] */
+
+// Bend angle (degrees)
 elbow_angle = 90; // [5:5:180]
 
-// Bend radius from the pivot to the pipe centerline; -1 = library default (half the pipe OD), 0 = L-shaped elbow (elbow only, mm)
+// Bend radius from the pivot to the pipe centerline; -1 = library default (half the pipe OD) (mm)
 elbow_bend_radius = -1; // [-1:0.5:100]
 
-// Extra straight length added to every arm of a fitting (elbow, tee, wye, corner, crosses, six-way, coupling, cap; mm)
+/* [Fitting Options] */
+
+// Extra straight length added to every arm (elbow, tee, wye, corner, cross, side-outlet tee, six-way, coupling, cap; mm)
 arm_extension = 0; // [0:1:300]
 
-// Number of bolt holes (flange only)
+/* [Flange Options] */
+
+// Number of bolt holes
 flange_mounts = 4; // [0:1:16]
 
-// Bolt hole diameter, 0 = largest safe size (flange only, mm)
+// Bolt hole diameter, 0 = largest safe size (mm)
 flange_mount_diam = 0; // [0:0.5:40]
 
 /* [Second Size (adapter & bushing)] */

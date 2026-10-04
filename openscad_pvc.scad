@@ -1052,7 +1052,7 @@ module pvc_cap(pvc, ends=[], extend=0,
     assert(in_list(ends_[0], ["fipt", "socket"]), 
         "pvc_cap(): Only 'fipt' and 'socket' are allowable end types for PVC caps");
 
-    od = (ends_[0] == "socket") ? pvc_od(pvc) + (pvc_wall(pvc)/3)*2 : pvc_od(pvc); 
+    od = (ends_[0] == "socket") ? pvc_od(pvc) + _pvc_socket_wall(pvc) * 2 : pvc_od(pvc); 
     tl = pvc_tl(pvc);
     pipe_addl = 1 + extend;
     wall = pvc_wall(pvc);
@@ -1531,6 +1531,15 @@ module pvc_union(pvc,
 //   unique schedules.
 ///   **NOTE:** this dynamic assignment is below in this LibFile, *after* the declaration of _PVC_specs_raw.
 
+// Constant: $pvc_socket_wall
+// Description:
+//   Wall thickness of `socket` endpoints, in `mm`. Unset (the default), sockets use a third of the
+//   pipe's wall thickness, which is thin for 3D printing (about 0.96mm for 3/4" schedule 40). Set it to
+//   reinforce the sockets on every part; the socket's bore always stays the pipe's outer diameter.
+// Example:
+//   $pvc_socket_wall = 3;
+//   pvc_tee(pvc_spec_lookup(40, dn="DN20"));
+
 // Constant: $pvc_thread_style
 // Description:
 //   Selects how `mipt` and `fipt` endpoints are threaded. Unset (the default), they use the
@@ -1659,9 +1668,9 @@ module pvc_part_component(pvc, end="socket", length=undef, socket_overlap=3,
                 ? length
                 : assert(length >= 0, "pvc_part_component(): specified 'length' can't be negative");
 
-    max_od = max([ od, (end == "socket") ? sum([ od, (wall/3) * 2 ]) : pvc_od(pvc) ]);
+    max_od = max([ od, (end == "socket") ? sum([ od, _pvc_socket_wall(pvc) * 2 ]) : pvc_od(pvc) ]);
     od2 = (end == "socket") 
-        ? pvc_od(pvc) + (pvc_wall(pvc) / 3 * 2)
+        ? pvc_od(pvc) + _pvc_socket_wall(pvc) * 2
         : (in_list(end, ["mipt"]))
             ? od - (od - id) / 2
             : od;
@@ -1795,7 +1804,7 @@ module pvc_endpoint(pvc, type="spigot", length=undef,
         od = pvc_od(pvc);
         id = pvc_id(pvc);
         wall = pvc_wall(pvc);
-        attachable_od = (type == "socket") ? sum([od, (wall/3) * 2]) : od;
+        attachable_od = (type == "socket") ? sum([od, _pvc_socket_wall(pvc) * 2]) : od;
 
         overlap = (type == "socket") ? 3 : 0;
         l = sum([ 
@@ -1827,7 +1836,7 @@ module pvc_endpoint(pvc, type="spigot", length=undef,
                 // the bore reaches 0.01mm inside the pipe's OD so the socket overlaps the pipe section it's
                 // attached to, rather than sharing a surface with it (which leaves non-manifold edges);
                 // the endpoint's negative still cuts the full OD-sized bore where the pipe goes in
-                tube(id=od - 0.02, od=od + wall / 3 * 2, l=l, anchor=CENTER);
+                tube(id=od - 0.02, od=od + _pvc_socket_wall(pvc) * 2, l=l, anchor=CENTER);
 
             } else if (type == "fipt") {
                 // NPT female threads accept a real pipe, so they're wider than the pipe's OD: the body
@@ -1852,6 +1861,16 @@ module pvc_endpoint(pvc, type="spigot", length=undef,
         }
     }
 }
+/// Function: _pvc_socket_wall()
+/// Synopsis: Internal function giving the wall thickness of socket endpoints
+/// Description:
+///   `$pvc_socket_wall` if set, otherwise a third of the PVC object's wall thickness (the default).
+function _pvc_socket_wall(pvc) =
+    is_undef($pvc_socket_wall) ? pvc_wall(pvc) / 3
+    : assert(is_num($pvc_socket_wall) && $pvc_socket_wall > 0, "openscad_pvc: $pvc_socket_wall must be a positive number")
+      $pvc_socket_wall;
+
+
 /// Constant: _PVC_NPT_SIZES
 /// Description:
 ///   PVC nominal names that BOSL2's `npt_threaded_rod()` supports: [name, NPT size in inches, standard

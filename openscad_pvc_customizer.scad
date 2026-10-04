@@ -46,6 +46,9 @@ thread_style = "default"; // [default, npt]
 // Wall thickness around socket ends, to reinforce prints; 0 or less = library default (a third of the pipe wall, about 1mm for 3/4in). The socket still fits the pipe at any thickness (mm)
 socket_wall = 0; // [0:0.1:10]
 
+// Length of every end, so sockets go deeper; 0 = library default (10mm, or the spec table's thread length with use_spec_threads). Also lengthens spigot and threaded ends (mm)
+end_length = 0; // [0:0.5:100]
+
 /* [Pipe Options] */
 
 // Total pipe length (mm)
@@ -113,10 +116,12 @@ function cz_spec(sched, d) =
     assert(!is_undef(row),
            str("Size ", d, " doesn't exist in schedule ", sched, ". Available: ",
                [for (r = _PVC_specs_raw) if (r[0] == sched) r[4]]))
-    let(base = pvc_spec_lookup(sched, dn = d))
-    (use_spec_threads && is_num(row[5]) && row[5] > 0 && is_num(row[6]) && row[6] > 0)
-        ? PVC(["tl", row[5], "pitch", row[6]], mutate = base)
-        : base;
+    let(base = pvc_spec_lookup(sched, dn = d),
+        spec = (use_spec_threads && is_num(row[5]) && row[5] > 0 && is_num(row[6]) && row[6] > 0)
+            ? PVC(["tl", row[5], "pitch", row[6]], mutate = base)
+            : base)
+    // every end's length comes from tl, so overriding it deepens sockets on every part
+    end_length > 0 ? PVC(["tl", end_length], mutate = spec) : spec;
 
 pvc = cz_spec(schedule, dn);
 pvc2 = in_list(part, ["adapter", "bushing"]) ? cz_spec(schedule2, dn2) : undef;

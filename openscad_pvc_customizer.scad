@@ -43,6 +43,9 @@ end_F = "auto"; // [auto:Auto - usual end for the part, spigot:Spigot - plain pi
 // Thread style for male/female threaded ends. NPT gives real tapered pipe threads that fit store-bought fittings - sizes up to 2in; larger sizes use the default threads.
 thread_style = "default"; // [default:Default - mates with this library only, npt:NPT - real pipe threads]
 
+// Wall thickness around socket ends, to reinforce prints; 0 or less = library default (a third of the pipe wall, about 1mm for 3/4in). The socket still fits the pipe at any thickness (mm)
+socket_wall = 0; // [0:0.1:10]
+
 /* [Pipe Options] */
 
 // Total pipe length (mm)
@@ -92,6 +95,7 @@ render_fn = 96; // [24:8:240]
 
 $fn = $preview ? render_fn / 4 : render_fn;
 $pvc_thread_style = thread_style == "npt" ? "npt" : undef;
+$pvc_socket_wall = socket_wall > 0 ? socket_wall : undef;
 
 // Number of ends each part type takes
 function cz_end_count(p) =

@@ -50,7 +50,7 @@ pipe_length = 50; // [5:1:1000]
 // Bend angle (degrees)
 elbow_angle = 90; // [5:5:180]
 
-// How rounded the bend is; the ends stay in place. 0 = sharp L, -1 = library default (half the pipe OD). Bigger radii may need more arm extension (mm)
+// How rounded the bend is; the ends stay in place. 0 = sharp L, -1 = library default (half the pipe OD). Limited to what the arms allow - add arm extension for gentler bends (mm)
 elbow_bend_radius = -1; // [-1:0.5:100]
 
 /* [Fitting Options] */
@@ -120,12 +120,24 @@ ends = [for (i = [0:cz_end_count(part) - 1]) all_ends[i] == "auto" ? undef : all
 
 anchor = place_on_bed ? BOTTOM : CENTER;
 
+// Elbow: limit the radius to what the arms allow (sliders can't depend on other settings), and
+// fall back to the default at 180 degrees, where the radius can't change
+elbow_custom_r = part == "elbow" && elbow_bend_radius >= 0;
+elbow_r_max = elbow_custom_r && elbow_angle < 180
+    ? pvc_elbow_max_bend_radius(pvc, elbow_angle, extend = arm_extension) : undef;
+elbow_r = !elbow_custom_r || elbow_angle >= 180 ? undef : min(elbow_bend_radius, elbow_r_max);
+if (elbow_custom_r && elbow_angle >= 180)
+    echo("NOTE: the bend radius can't be changed for a 180 degree elbow; using the default.");
+if (elbow_custom_r && elbow_angle < 180 && elbow_bend_radius > elbow_r_max)
+    echo(str("NOTE: bend radius ", elbow_bend_radius, "mm is more than these arms allow; using ",
+             round(elbow_r_max * 100) / 100, "mm. Add arm extension for a gentler bend."));
+
 echo(str("PART: ", part, "  schedule ", schedule, " ", pvc_name(pvc), "in (", dn, ")  OD=", pvc_od(pvc),
          "mm  wall=", pvc_wall(pvc), "mm  thread len=", pvc_tl(pvc), "mm  pitch=", pvc_pitch(pvc), "mm"));
 
 if (part == "pipe")            pvc_pipe(pvc, pipe_length, ends = ends, anchor = anchor);
 if (part == "elbow")           pvc_elbow(pvc, elbow_angle, ends = ends, anchor = anchor,
-                                         bend_radius = elbow_bend_radius < 0 ? undef : elbow_bend_radius, extend = arm_extension);
+                                         bend_radius = elbow_r, extend = arm_extension);
 if (part == "tee")             pvc_tee(pvc, ends = ends, anchor = anchor, extend = arm_extension);
 if (part == "wye")             pvc_wye(pvc, ends = ends, anchor = anchor, extend = arm_extension);
 if (part == "corner")          pvc_corner(pvc, ends = ends, anchor = anchor, extend = arm_extension);

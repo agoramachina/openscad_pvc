@@ -21,6 +21,9 @@ schedule = 40; // [40, 80, 120]
 dn = "DN20"; // [DN8:1/8in, DN12:1/4in, DN10:3/8in, DN15:1/2in, DN20:3/4in, DN25:1in, DN32:1-1/4in, DN40:1-1/2in, DN50:2in, DN65:2-1/2in, DN80:3in, DN90:3-1/2in, DN100:4in, DN125:5in, DN150:6in, DN200:8in, DN250:10in, DN300:12in, DN350:14in, DN400:16in, DN450:18in, DN500:20in, DN600:24in]
 
 /* [End Types] */
+
+// Extra room in socket openings so a real pipe of the chosen size fits a printed part; the opening is always at least the pipe's OD plus this. 0.3-0.5 suits most printers (mm)
+fit_clearance = 0.4; // [0:0.05:2]
 // "Auto" uses the part's own default (sockets for fittings, spigots for pipe). For a plain, unadorned end, pick "Spigot".
 // Parts only use as many ends as they have: A-B for 2-ended parts, A-C for tee/wye/corner, A-D for cross/side-outlet tee, A-F for six-way. Nipples ignore these.
 // Caps allow only socket/fipt; plugs only spigot/ispigot/mipt; bushings need A = socket/fipt (small side), B = spigot/mipt (large side).
@@ -99,6 +102,7 @@ render_fn = 96; // [24:8:240]
 
 $fn = $preview ? render_fn / 4 : render_fn;
 $pvc_thread_style = thread_style == "npt" ? "npt" : undef;
+$pvc_fit_clearance = fit_clearance;
 $pvc_socket_wall = socket_wall > 0 ? socket_wall : undef;
 $pvc_socket_depth = socket_depth > 0 ? socket_depth : undef;
 

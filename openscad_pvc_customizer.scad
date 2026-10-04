@@ -50,7 +50,7 @@ pipe_length = 50; // [5:1:1000]
 // Bend angle (degrees)
 elbow_angle = 90; // [5:5:180]
 
-// Bend radius from the pivot to the pipe centerline; -1 = library default (half the pipe OD) (mm)
+// How rounded the bend is; the ends stay in place. 0 = sharp L, -1 = library default (half the pipe OD). Bigger radii may need more arm extension (mm)
 elbow_bend_radius = -1; // [-1:0.5:100]
 
 /* [Fitting Options] */

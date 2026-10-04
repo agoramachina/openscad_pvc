@@ -296,7 +296,7 @@ module pvc_pipe(pvc, length, ends=[],
 //   angle = The angle in degrees to bend the elbow
 //   ---
 //   ends = A list of the two end types, `A` and `B`. Default: `["socket", "socket"]`
-//   bend_radius = Radius of the bend, measured from the pivot to the pipe's centerline, in `mm`. `0` makes a tight L-shaped elbow with a rounded outer corner. Default: `undef` (half the pipe's outer diameter)
+//   bend_radius = Radius of the bend, measured from the pivot to the pipe's centerline, in `mm`. The ends stay in place: a larger radius only makes the curve gentler (and the straight sections shorter). `0` makes a sharp, mitered L-shaped corner. Only adjustable for angles under 180. Default: `undef` (half the pipe's outer diameter)
 //   extend = Extra straight length added to every arm of the part, in `mm`. Default: `0`
 //   anchor = Translate so anchor point is at origin `[0,0,0]`. Default: `PVC_DEFAULT_ANCHOR`
 //   spin = Rotate this many degrees around the Z axis after anchoring. Default: `PVC_DEFAULT_SPIN`
@@ -328,6 +328,18 @@ module pvc_elbow(pvc, angle, ends=[], bend_radius=undef, extend=0,
     segment_len = tl + 1 + extend;
     r = is_undef(bend_radius) ? od/2 : bend_radius;
     assert(r >= 0, "pvc_elbow(): bend_radius can't be negative");
+    assert(angle < 180 || r == od/2,
+        "pvc_elbow(): bend_radius can only be changed for angles under 180, where the two ends meet at a corner");
+    // The ends stay put whatever the radius: each end sits a fixed distance from the corner where the
+    // two centerlines meet (the distance it has at the default radius, od/2). A larger radius starts the
+    // bend further from that corner and leaves shorter straight sections.
+    straight = segment_len + (angle < 180 ? (od/2 - r) * tan(angle/2) : 0);
+    assert(straight > tl, str("pvc_elbow(): bend_radius ", r, " leaves no room for the ends at ", angle,
+        " degrees; lengthen them with extend=, or use a smaller bend_radius"));
+    bend_z = straight - segment_len/2;  // top of end A, where the bend starts
+    // r=0 is a sharp corner: no bend at all - both ends run past the corner and the bisector cuts them
+    // into a miter. This is how far past the corner each end has to reach to fill the outside of it.
+    miter_ext = r == 0 ? od/2 * tan(angle/2) + 0.01 : 0;
     // Bend cross-sections, clipped to x >= 0.01 so tight bends (r < od/2) don't cross - or touch - the
     // rotation axis; sweeping a shape that touches its axis leaves degenerate zero-thickness faces.
     // The bore is swept separately and diff'd away, which keeps the pipe hollow at any radius.
@@ -335,30 +347,32 @@ module pvc_elbow(pvc, angle, ends=[], bend_radius=undef, extend=0,
     bend_outer = intersection(right(r, p=circle(d=od)), half_plane);
     bend_inner = intersection(right(r, p=circle(d=id)), half_plane);
     // B's base sits on the end of the bend; its anchor is centered in its threaded length, like A's
-    bend_end = apply(yrot(angle, cp=[r, 0, segment_len/2]), [0, 0, segment_len/2]);
+    bend_end = apply(yrot(angle, cp=[r, 0, bend_z]), [0, 0, bend_z]);
     
     anchors = [
         named_anchor("A", [0, 0, -1 * segment_len/2 + tl/2], DOWN, 0),
-        named_anchor("B", bend_end + apply(yrot(angle), UP) * (1 + extend + tl/2), apply(yrot(angle), UP), 0),
+        named_anchor("B", bend_end + apply(yrot(angle), UP) * (straight - tl/2), apply(yrot(angle), UP), 0),
     ];
     // The two straight ends and the bend, shared by both construction paths below
-    module end_a() pvc_part_component(pvc, end=ends_[0], length=1 + extend, anchor=CENTER, orient=DOWN);
+    module end_a()
+        up((bend_z + miter_ext - segment_len/2) / 2)
+            pvc_part_component(pvc, end=ends_[0], length=straight + miter_ext - tl, anchor=CENTER, orient=DOWN);
     // B: pivot around the bend's center, then place the component's base on the sweep's end face.
     // (Positioned directly rather than via attach() to a tiny sphere, which newer BOSL2 offsets.)
     module end_b()
-        up(segment_len/2) right(r) yrot(angle) left(r) up(segment_len/2)
-            pvc_part_component(pvc, length=1 + extend, end=ends_[1], anchor=CENTER);
+        up(bend_z) right(r) yrot(angle) left(r) up((straight - miter_ext) / 2)
+            pvc_part_component(pvc, length=straight + miter_ext - tl, end=ends_[1], anchor=CENTER);
     // no anchor on the sweep: newer BOSL2 centers a partial sweep's bounding box on CENTER, shifting the bend
     // `over` (degrees) sweeps a little past both ends, so the bend overlaps each straight end instead of
     // meeting it face-to-face: faceted rings and cylinders don't line up exactly, and flush faces leave
     // zero-thickness slivers. The bore sweeps further than the wall so their end faces don't coincide either.
     module bend(region, over=0)
-        right(r) zrot(180) up(segment_len/2) rotate_sweep(region, angle + 2 * over, spin=-over, orient=FWD);
+        right(r) zrot(180) up(bend_z) rotate_sweep(region, angle + 2 * over, spin=-over, orient=FWD);
     // Half-spaces on either side of the bend's bisector plane, through the pivot axis. `over` pushes the
     // boundary past the bisector, so bore negatives overlap there instead of sharing faces with the walls.
     big = 4 * (segment_len + r + od);
-    module a_side(over=0) up(segment_len/2) right(r) yrot(angle/2) down(big/2 - over) cube(big, center=true);
-    module b_side(over=0) up(segment_len/2) right(r) yrot(angle/2) up(big/2 - over) cube(big, center=true);
+    module a_side(over=0) up(bend_z) right(r) yrot(angle/2) down(big/2 - over) cube(big, center=true);
+    module b_side(over=0) up(bend_z) right(r) yrot(angle/2) up(big/2 - over) cube(big, center=true);
 
     attachable(anchor, spin, orient, d=od, h=segment_len, anchors=anchors) {
         if (r >= od/2) {
@@ -377,12 +391,12 @@ module pvc_elbow(pvc, angle, ends=[], bend_radius=undef, extend=0,
                 union() {
                     intersection() { a_side(); hide("pvc_rem__full") end_a(); }
                     intersection() { b_side(); hide("pvc_rem__full") end_b(); }
-                    bend(bend_outer, over=0.5);
+                    if (r > 0) bend(bend_outer, over=0.5);
                 }
                 union() {
                     intersection() { a_side(over=0.01); show_only("pvc_rem__full") end_a(); }
                     intersection() { b_side(over=0.01); show_only("pvc_rem__full") end_b(); }
-                    bend(bend_inner, over=1);
+                    if (r > 0) bend(bend_inner, over=1);
                 }
             }
         }

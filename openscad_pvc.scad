@@ -356,12 +356,14 @@ module pvc_elbow(pvc, angle, ends=[], bend_radius=undef, extend=0,
     // The two straight ends and the bend, shared by both construction paths below
     module end_a()
         up((bend_z + miter_ext - segment_len/2) / 2)
-            pvc_part_component(pvc, end=ends_[0], length=straight + miter_ext - tl, anchor=CENTER, orient=DOWN);
+            pvc_part_component(pvc, end=ends_[0], length=straight + miter_ext - tl, socket_reserve=miter_ext + 0.5,
+                anchor=CENTER, orient=DOWN);
     // B: pivot around the bend's center, then place the component's base on the sweep's end face.
     // (Positioned directly rather than via attach() to a tiny sphere, which newer BOSL2 offsets.)
     module end_b()
         up(bend_z) right(r) yrot(angle) left(r) up((straight - miter_ext) / 2)
-            pvc_part_component(pvc, length=straight + miter_ext - tl, end=ends_[1], anchor=CENTER);
+            pvc_part_component(pvc, length=straight + miter_ext - tl, end=ends_[1], socket_reserve=miter_ext + 0.5,
+                anchor=CENTER);
     // no anchor on the sweep: newer BOSL2 centers a partial sweep's bounding box on CENTER, shifting the bend
     // `over` (degrees) sweeps a little past both ends, so the bend overlaps each straight end instead of
     // meeting it face-to-face: faceted rings and cylinders don't line up exactly, and flush faces leave
@@ -984,9 +986,9 @@ module pvc_coupling(pvc, ends=[], extend=0,
     ];
     attachable(anchor, spin, orient, d=od, h=total_pipe_len, anchors=anchors) {
         diff("pvc_rem__full")
-            pvc_part_component(pvc, length=pipe_addl, end=ends_[1], anchor=BOTTOM) // B
+            pvc_part_component(pvc, length=pipe_addl, end=ends_[1], socket_reserve=1, anchor=BOTTOM) // B
                 attach("_j_down", "_j_down")
-                    pvc_part_component(pvc, length=pipe_addl, end=ends_[0]); // A
+                    pvc_part_component(pvc, length=pipe_addl, end=ends_[0], socket_reserve=1); // A
         children();
     }
 }
@@ -1064,7 +1066,7 @@ module pvc_cap(pvc, ends=[], extend=0,
     attachable(anchor, spin, orient, d=od, h=total_pipe_len, anchors=anchors) {
         up(total_pipe_len/2)
         diff("pvc_rem__full")
-            pvc_part_component(pvc, length=pipe_addl, end=ends_[0], anchor=TOP)  // A
+            pvc_part_component(pvc, length=pipe_addl, end=ends_[0], socket_reserve=0.01, anchor=TOP)  // A
                 attach(BOTTOM, TOP)
                     cylinder(d=od - 0.02, h=wall);  // inset 0.01mm: a disk as wide as the endpoint shares its outer surface
         children();
@@ -1540,6 +1542,18 @@ module pvc_union(pvc,
 //   $pvc_socket_wall = 3;
 //   pvc_tee(pvc_spec_lookup(40, dn="DN20"));
 
+// Constant: $pvc_socket_depth
+// Description:
+//   Extra depth for `socket` endpoints, in `mm`, gained by growing each socket inward over the part's
+//   straight pipe section, so a pipe slides further in while the part keeps its size and anchors.
+//   Unset (the default), sockets are as deep as the PVC object's `tl`. Each arm can only give up the
+//   straight length it has: half the pipe's OD is kept before where a part's arms meet (1mm per side on
+//   a coupling), and a console note reports when the depth is limited. Combine with `extend=` to give
+//   the sockets room. For sockets that grow outward instead, making the part longer, use a larger `tl`.
+// Example:
+//   $pvc_socket_depth = 10;
+//   pvc_tee(pvc_spec_lookup(40, dn="DN20"), extend=10);
+
 // Constant: $pvc_thread_style
 // Description:
 //   Selects how `mipt` and `fipt` endpoints are threaded. Unset (the default), they use the
@@ -1634,6 +1648,7 @@ PVC_DEFAULT_ORIENT = UP;
 ///   length = The length of the pipe. Default: `undef`
 ///   end = The endtype of the part component. Default: `socket`
 ///   socket_overlap = The amount of overlap provided, when `end` is set to `socket`. Default: `3`
+///   socket_reserve = Straight pipe length that must remain when `$pvc_socket_depth` deepens a socket. Default: `undef` (half the pipe's OD)
 ///   anchor = Translate so anchor point is at origin `[0,0,0]`. Default: `PVC_DEFAULT_ANCHOR`
 ///   spin = Rotate this many degrees around the Z axis after anchoring. Default: `PVC_DEFAULT_SPIN`
 ///   orient = Vector direction to which the model should point after spin. Default: `PVC_DEFAULT_ORIENT`
@@ -1648,7 +1663,7 @@ PVC_DEFAULT_ORIENT = UP;
 /// Figure:
 ///   expose_anchors() pvc_part_component(pvc_a, end="mipt") show_anchors(std=false, s=40);
 ///
-module pvc_part_component(pvc, end="socket", length=undef, socket_overlap=3,
+module pvc_part_component(pvc, end="socket", length=undef, socket_overlap=3, socket_reserve=undef,
         anchor=PVC_DEFAULT_ANCHOR, spin=PVC_DEFAULT_SPIN, orient=PVC_DEFAULT_ORIENT) {
 
     assert(in_list(end, PVC_ENDTYPES), 
@@ -1682,6 +1697,19 @@ module pvc_part_component(pvc, end="socket", length=undef, socket_overlap=3,
 
     total_len = sum([ tl, pipe_len ]);
 
+    // $pvc_socket_depth deepens a socket inward, over the straight pipe section, without changing the
+    // component's length (or anchors): the straight section shrinks and the socket grows by the same
+    // amount. socket_reserve is the straight length that must remain - by default half the pipe's OD,
+    // which keeps the socket's bore clear of where a part's arms meet.
+    want_depth = (end == "socket" && !is_undef($pvc_socket_depth)) ? $pvc_socket_depth : 0;
+    assert(is_num(want_depth) && want_depth >= 0, "openscad_pvc: $pvc_socket_depth must be a non-negative number");
+    room = max(0, pipe_len - (is_undef(socket_reserve) ? od/2 : socket_reserve));
+    depth = min(want_depth, room);
+    if (want_depth > room)
+        echo(str("openscad_pvc: socket depth ", want_depth, "mm doesn't fit this part's arm; using ",
+                 round(room * 100) / 100, "mm. Lengthen the arms (extend=) for deeper sockets."));
+    stub_len = max(pipe_len - depth, 0.0001);
+
     anchors = [
         named_anchor("_j_up",    [0, 0, -1 * total_len/2], UP,    0),
         named_anchor("_j_down",  [0, 0, -1 * total_len/2], DOWN,  0),
@@ -1696,16 +1724,16 @@ module pvc_part_component(pvc, end="socket", length=undef, socket_overlap=3,
     tag("pvc_rem__full")
         attachable(anchor, spin, orient, d=max_od, l=total_len, anchors=anchors) {
             down(total_len/2)
-                cylinder(d=id, h=pipe_len, anchor=BOTTOM)
+                cylinder(d=id, h=stub_len, anchor=BOTTOM)
                     attach(TOP, BOTTOM, overlap=0.001)
-                        pvc_endpoint_negative(pvc, end);
+                        pvc_endpoint_negative(pvc, end, length=tl + depth);
             union() {}
         }
     attachable(anchor, spin, orient, d=max_od, l=total_len, anchors=anchors) {
         down(total_len/2)
-            tube(od=od, wall=wall, l=pipe_len, anchor=BOTTOM)
+            tube(od=od, wall=wall, l=stub_len, anchor=BOTTOM)
                 attach(TOP, BOTTOM, overlap=(end == "socket") ? socket_overlap + 0.001 : 0.001)
-                    pvc_endpoint(pvc, end);
+                    pvc_endpoint(pvc, end, length=tl + depth);
        children();
     }
 }

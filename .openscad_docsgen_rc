@@ -4,6 +4,7 @@ ProjectName: openscad_pvc
 GenerateDocs: Files, TOC, Index
 IgnoreFiles:
   object_common_functions.scad
+  openscad_pvc_customizer.scad
   tmp_*.scad
 DefineHeader(BulletList): Todo
 DefineHeader(BulletList): Listing

@@ -26,3 +26,5 @@ wget -N -q -O openscad_pvc.scad https://raw.githubusercontent.com/jon-gilbert/op
 ```
 Additional information on external libraries needed can be found at [the Installation wiki](https://github.com/jon-gilbert/openscad_pvc/wiki/Installation).
 
+# Customizer
+To make individual parts without writing any code, open `openscad_pvc_customizer.scad` in OpenSCAD and use **Window > Customizer**. You can pick the part type, schedule and size, each end's type (socket, spigot, mipt, fipt), and options like pipe length, elbow angle and bend radius, and arm extension. It uses the same library dependencies as `openscad_pvc.scad`.

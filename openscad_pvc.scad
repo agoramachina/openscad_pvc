@@ -992,7 +992,7 @@ module pvc_cap(pvc, ends=[],
         diff("pvc_rem__full")
             pvc_part_component(pvc, length=pipe_addl, end=ends_[0], anchor=TOP)  // A
                 attach(BOTTOM, TOP)
-                    cylinder(d=od, h=wall);
+                    cylinder(d=od - 0.02, h=wall);  // inset 0.01mm: a disk as wide as the endpoint shares its outer surface
         children();
     }
 }
@@ -1075,7 +1075,7 @@ module pvc_plug(pvc, ends=[],
                     attach(TOP, BOTTOM)
                         pvc_part_component(pvc, length=0, end=ends_[0])   // A
                             attach(TOP, BOTTOM, overlap=wall)
-                                cylinder(d=id, h=wall);
+                                cylinder(d=id - 0.02, h=wall);  // inset 0.01mm: as wide as an ispigot, it would share its outer surface
                     attach(BOTTOM, TOP, overlap=wall/2 - 0.1)
                         tag("_rem__plug")
                             cuboid(slot);
@@ -1406,7 +1406,8 @@ module pvc_flange(pvc, ends=[], mounts=4, mount_diam=0,
         down(part_height/2)
         diff("pvc_rem__full") {
             cylinder(d=flange_diam, h=flange_height, anchor=BOTTOM);   // A
-            pvc_part_component(pvc, end=ends_[1], length=flange_height, anchor=BOTTOM); // B
+            // starts 0.01mm up, so its bottom face isn't coplanar with the flange disk's
+            up(0.01) pvc_part_component(pvc, end=ends_[1], length=flange_height - 0.01, anchor=BOTTOM); // B
             tag("pvc_rem__full")
                 down(0.01)
                     cylinder(d=pvc_id(pvc), h=flange_height, anchor=BOTTOM);

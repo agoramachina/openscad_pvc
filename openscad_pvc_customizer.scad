@@ -27,21 +27,21 @@ dn = "DN20"; // [DN8:1/8in, DN12:1/4in, DN10:3/8in, DN15:1/2in, DN20:3/4in, DN25
 
 // Which end is where varies by part - check the preview after changing one.
 
-// End A (main run / the only end for caps and plugs)
-end_A = "auto"; // [auto:Auto - usual end for the part, spigot:Spigot - plain pipe end, socket:Socket - a pipe slides in, ispigot:Inner spigot - fits inside a pipe, mipt:Male thread - MIPT, fipt:Female thread - FIPT]
-// End B (main run)
-end_B = "auto"; // [auto:Auto - usual end for the part, spigot:Spigot - plain pipe end, socket:Socket - a pipe slides in, ispigot:Inner spigot - fits inside a pipe, mipt:Male thread - MIPT, fipt:Female thread - FIPT]
-// End C (first branch)
-end_C = "auto"; // [auto:Auto - usual end for the part, spigot:Spigot - plain pipe end, socket:Socket - a pipe slides in, ispigot:Inner spigot - fits inside a pipe, mipt:Male thread - MIPT, fipt:Female thread - FIPT]
-// End D
-end_D = "auto"; // [auto:Auto - usual end for the part, spigot:Spigot - plain pipe end, socket:Socket - a pipe slides in, ispigot:Inner spigot - fits inside a pipe, mipt:Male thread - MIPT, fipt:Female thread - FIPT]
-// End E
-end_E = "auto"; // [auto:Auto - usual end for the part, spigot:Spigot - plain pipe end, socket:Socket - a pipe slides in, ispigot:Inner spigot - fits inside a pipe, mipt:Male thread - MIPT, fipt:Female thread - FIPT]
-// End F
-end_F = "auto"; // [auto:Auto - usual end for the part, spigot:Spigot - plain pipe end, socket:Socket - a pipe slides in, ispigot:Inner spigot - fits inside a pipe, mipt:Male thread - MIPT, fipt:Female thread - FIPT]
+// Main run; also the only end for caps and plugs. auto = the part's usual end, spigot = plain pipe end, socket = a pipe slides in, ispigot = fits inside a pipe, mipt = male thread, fipt = female thread
+end_A = "auto"; // [auto, spigot, socket, ispigot, mipt, fipt]
+// Main run
+end_B = "auto"; // [auto, spigot, socket, ispigot, mipt, fipt]
+// First branch
+end_C = "auto"; // [auto, spigot, socket, ispigot, mipt, fipt]
+// Second branch
+end_D = "auto"; // [auto, spigot, socket, ispigot, mipt, fipt]
+// Six-way joint only
+end_E = "auto"; // [auto, spigot, socket, ispigot, mipt, fipt]
+// Six-way joint only
+end_F = "auto"; // [auto, spigot, socket, ispigot, mipt, fipt]
 
-// Thread style for male/female threaded ends. NPT gives real tapered pipe threads that fit store-bought fittings - sizes up to 2in; larger sizes use the default threads.
-thread_style = "default"; // [default:Default - mates with this library only, npt:NPT - real pipe threads]
+// Threads for mipt/fipt ends. default = mates only with this library's parts; npt = real tapered pipe threads that fit store-bought fittings, sizes up to 2in (larger sizes use default)
+thread_style = "default"; // [default, npt]
 
 // Wall thickness around socket ends, to reinforce prints; 0 or less = library default (a third of the pipe wall, about 1mm for 3/4in). The socket still fits the pipe at any thickness (mm)
 socket_wall = 0; // [0:0.1:10]

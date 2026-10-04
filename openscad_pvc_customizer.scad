@@ -49,6 +49,9 @@ socket_wall = 0; // [0:0.1:10]
 // Length of every end, so sockets go deeper; 0 = library default (10mm, or the spec table's thread length with use_spec_threads). Also lengthens spigot and threaded ends (mm)
 end_length = 0; // [0:0.5:100]
 
+// Extra socket depth, growing inward so the part keeps its size; limited by the arm's straight section, so add arm extension for more room; 0 = none (mm)
+socket_depth = 0; // [0:0.5:100]
+
 /* [Pipe Options] */
 
 // Total pipe length (mm)
@@ -97,6 +100,7 @@ render_fn = 96; // [24:8:240]
 $fn = $preview ? render_fn / 4 : render_fn;
 $pvc_thread_style = thread_style == "npt" ? "npt" : undef;
 $pvc_socket_wall = socket_wall > 0 ? socket_wall : undef;
+$pvc_socket_depth = socket_depth > 0 ? socket_depth : undef;
 
 // Number of ends each part type takes
 function cz_end_count(p) =

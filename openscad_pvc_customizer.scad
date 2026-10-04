@@ -51,6 +51,9 @@ socket_wall = 0; // [0:0.1:10]
 // Total pipe length (mm)
 pipe_length = 50; // [5:1:1000]
 
+// Extra straight length added to every arm of a fitting (elbow, tee, wye, corner, cross, side-outlet tee, six-way, coupling, cap; mm)
+arm_extension = 0; // [0:1:300]
+
 /* [Elbow Options] */
 
 // Bend angle (degrees)
@@ -58,11 +61,6 @@ elbow_angle = 90; // [5:5:180]
 
 // How rounded the bend is; the ends stay in place. 0 = sharp L, -1 = library default (half the pipe OD). Limited to what the arms allow - add arm extension for gentler bends (mm)
 elbow_bend_radius = -1; // [-1:0.5:100]
-
-/* [Fitting Options] */
-
-// Extra straight length added to every arm (elbow, tee, wye, corner, cross, side-outlet tee, six-way, coupling, cap; mm)
-arm_extension = 0; // [0:1:300]
 
 /* [Flange Options] */
 

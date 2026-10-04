@@ -358,16 +358,15 @@ module pvc_elbow(pvc, angle, ends=[],
                     right(od/2)
                         zrot(180)
                             up(segment_len/2)
-                                rotate_sweep(curved_region, angle, spin=0, orient=FWD, anchor=CENTER);
+                                rotate_sweep(curved_region, angle, spin=0, orient=FWD); // no anchor: newer BOSL2 centers a partial sweep's bounding box on CENTER, shifting the bend
+                // B: pivot around the bend's center, then place the component's base on the sweep's end face.
+                // (Positioned directly rather than via attach() to a tiny sphere, which newer BOSL2 offsets.)
                 up(segment_len/2)
                     right(od/2)
                         yrot(angle)
-                            tag("pvc_rem__full")
-                                sphere(d=0.0001) 
-                                    attach(TOP, "_j_down")
-                                        left(od/2)
-                                            tag("")
-                                                pvc_part_component(pvc, length=1, end=ends_[1]); 
+                            left(od/2)
+                                up(segment_len/2)
+                                    pvc_part_component(pvc, length=1, end=ends_[1], anchor=CENTER);
             }
         children();
     }
@@ -1726,7 +1725,7 @@ module pvc_endpoint(pvc, type="spigot", length=undef,
                 difference() {
                     threaded_rod(d=id + wall, l=l,
                         pitch=pvc_pitch(pvc), 
-                        bevel=true, 
+                        bevel1=false, bevel2=true, // bevel only the free end; newer BOSL2 bevels eat through the joined end
                         internal=false, 
                         anchor=CENTER);
                     cylinder(d=id, h=l + 0.001, anchor=CENTER);
@@ -1740,7 +1739,7 @@ module pvc_endpoint(pvc, type="spigot", length=undef,
                     tube(od=od, wall=wall, l=l, anchor=CENTER);
                     threaded_rod(d=id + wall, l=l + 0.001,
                         pitch=pvc_pitch(pvc),
-                        bevel=true,
+                        bevel1=false, bevel2=true, // bevel only the free end; newer BOSL2 bevels eat through the joined end
                         internal=true,
                         anchor=CENTER);
                 }
